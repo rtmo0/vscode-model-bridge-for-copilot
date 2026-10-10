@@ -49,7 +49,7 @@ Each request runs Claude Code in non-interactive print mode with streamed JSON o
 
 ## Settings
 
-- `anthropicForCopilot.claudePath`: executable name or absolute path, default `claude`.
+- `anthropicForCopilot.claudePath`: executable name or absolute path, default `claude`. The native installer location `~/.local/bin/claude` is detected automatically even when it is missing from `PATH`.
 - `anthropicForCopilot.model`: fallback Claude Code model alias, default `default`.
 - `anthropicForCopilot.instructions`: instructions appended to every request.
 - `anthropicForCopilot.maxOutputTokens`: output capacity advertised to VS Code.

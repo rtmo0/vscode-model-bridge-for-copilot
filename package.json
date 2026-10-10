@@ -123,7 +123,7 @@
         "anthropicForCopilot.claudePath": {
           "type": "string",
           "default": "claude",
-          "description": "Path to the official Claude Code executable. The CLI owns and stores the signed-in session."
+          "description": "Path to the official Claude Code executable. With the default value, the extension also detects ~/.local/bin/claude. The CLI owns and stores the signed-in session."
         },
         "anthropicForCopilot.model": {
           "type": "string",

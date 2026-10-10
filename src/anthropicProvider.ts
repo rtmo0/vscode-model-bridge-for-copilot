@@ -1,4 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import * as vscode from 'vscode';
 import { getClaudeCliStatus, streamClaudeResponse } from './claudeCli';
 import {
@@ -178,7 +181,7 @@ export class AnthropicModelProvider implements vscode.LanguageModelChatProvider,
 export function getAnthropicProviderConfig(): AnthropicProviderConfig {
   const config = vscode.workspace.getConfiguration('anthropicForCopilot');
   return {
-    claudePath: config.get('claudePath', 'claude').trim() || 'claude',
+    claudePath: resolveClaudePath(config.get('claudePath', 'claude')),
     model: config.get('model', 'default').trim() || 'default',
     instructions: config.get(
       'instructions',
@@ -246,6 +249,18 @@ function safeJson(value: unknown): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function resolveClaudePath(configuredPath: string): string {
+  const normalized = configuredPath.trim() || 'claude';
+  if (normalized !== 'claude') {
+    return normalized;
+  }
+
+  const candidates = process.platform === 'win32'
+    ? [join(process.env.LOCALAPPDATA ?? '', 'Programs', 'claude', 'claude.exe')]
+    : [join(homedir(), '.local', 'bin', 'claude')];
+  return candidates.find((candidate) => candidate.length > 0 && existsSync(candidate)) ?? normalized;
 }
 
 function normalizePositiveInteger(value: unknown, fallback: number): number {
