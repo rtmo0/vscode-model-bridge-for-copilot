@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - main
+      - master
   pull_request:
     branches:
       - main
+      - master
   workflow_dispatch:
 
 permissions:
@@ -46,7 +48,7 @@ jobs:
       - name: Upload VSIX artifact
         uses: actions/upload-artifact@v4
         with:
-          name: antropic-for-copilot-vsix
+          name: model-bridge-for-copilot-vsix
           path: "*.vsix"
           if-no-files-found: error
           retention-days: 14

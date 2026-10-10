@@ -1,0 +1,143 @@
+import { loadBundled, assertEqual } from './testBundleHelper.mjs';
+
+const loaded = await loadBundled('src/providers/codex/codexRequestBuilder.ts', {
+  LanguageModelChatToolMode: { Required: 2 }
+});
+try {
+  const {
+    areCodexRequestsIncrementallyCompatible,
+    buildCodexResponsesRequest,
+    buildCodexResponsesRequestWithMetrics,
+    buildCodexResponsesWebSocketEvent,
+    fingerprintCodexRequestEnvelope,
+    resetCodexToolSchemaCache
+  } = loaded.exports;
+  const identity = {
+    installationId: '11111111-1111-4111-8111-111111111111',
+    sessionId: '22222222-2222-4222-8222-222222222222',
+    threadId: '33333333-3333-4333-8333-333333333333',
+    turnId: '44444444-4444-4444-8444-444444444444',
+    windowId: '55555555-5555-4555-8555-555555555555'
+  };
+  const base = {
+    compatibilityEnabled: true,
+    identity,
+    model: 'gpt-test',
+    instructions: 'instructions',
+    input: [{ type: 'message', role: 'user', content: 'hello' }],
+    tools: [{ name: 'read', description: 'Read', inputSchema: { type: 'object' } }],
+    reasoning: { effort: 'high', summary: 'auto' },
+    maxOutputTokens: 100,
+    omitMaxOutputTokens: true,
+    textVerbosity: 'medium',
+    turnStartedAtUnixMs: 1_787_000_000_000
+  };
+  const legacyEnvelope = fingerprintCodexRequestEnvelope(base);
+  const expectedLegacyEnvelope = '{"protocolSettings":null,"requestFingerprint":"{\\"include\\":[\\"reasoning.encrypted_content\\"],\\"instructions\\":\\"instructions\\",\\"model\\":\\"gpt-test\\",\\"parallel_tool_calls\\":true,\\"reasoning\\":{\\"effort\\":\\"high\\",\\"summary\\":\\"auto\\"},\\"store\\":false,\\"stream\\":true,\\"text\\":{\\"verbosity\\":\\"medium\\"},\\"tool_choice\\":\\"auto\\",\\"tools\\":[{\\"description\\":\\"Read\\",\\"name\\":\\"read\\",\\"parameters\\":{\\"type\\":\\"object\\"},\\"strict\\":false,\\"type\\":\\"function\\"}]}"}';
+  assertEqual(legacyEnvelope, expectedLegacyEnvelope, 'legacy envelope fingerprint remains byte-for-byte stable');
+  const defaultIdentityEnvelope = fingerprintCodexRequestEnvelope({
+    ...base,
+    clientIdentity: { profile: 'extension', originator: 'model-bridge-codex', userAgent: 'model-bridge-codex/1.8.1' }
+  });
+  assertEqual(defaultIdentityEnvelope, legacyEnvelope, 'default extension identity preserves legacy envelope fingerprint');
+  assertEqual(fingerprintCodexRequestEnvelope({ ...base, clientIdentity: { profile: 'neutral' } }) === legacyEnvelope, false, 'effective identity change invalidates envelope fingerprint');
+  const request = buildCodexResponsesRequest(base);
+  const compatibilityDefaultReasoningRequest = buildCodexResponsesRequest({
+    ...base,
+    reasoning: undefined,
+    tools: []
+  });
+  const noReasoningRequest = buildCodexResponsesRequest({
+    ...base,
+    reasoning: { effort: 'none', summary: 'auto' },
+    tools: []
+  });
+  const standardRequest = buildCodexResponsesRequest({
+    ...base,
+    compatibilityEnabled: false,
+    reasoning: undefined,
+    tools: []
+  });
+  const hostedWebSearchRequest = buildCodexResponsesRequest({
+    ...base,
+    compatibilityEnabled: false,
+    tools: [],
+    hostedTools: [{ type: 'web_search' }]
+  });
+  const configuredHostedWebSearchRequest = buildCodexResponsesRequest({
+    ...base,
+    compatibilityEnabled: false,
+    tools: [],
+    hostedTools: [{ type: 'web_search', external_web_access: false, search_context_size: 'high' }]
+  });
+  const continuationInput = [
+    { type: 'message', id: '', role: 'assistant', content: 'empty id' },
+    { type: 'message', id: 'legacy-message-id', role: 'assistant', content: 'legacy id' },
+    { type: 'message', id: 'msg_valid123', role: 'assistant', content: 'valid message id' },
+    { type: 'function_call', id: 'fc_valid123', call_id: 'call_valid', name: 'read', arguments: '{}' },
+    { type: 'function_call_output', id: 'legacy-output-id', call_id: 'call_valid', output: 'result' },
+    { type: 'web_search_call', id: 'ws_valid123', status: 'completed', action: { type: 'search', query: 'test' } }
+  ];
+  const sanitizedHttpRequest = buildCodexResponsesRequest({
+    ...base,
+    input: continuationInput,
+    tools: []
+  });
+  const sanitizedWebSocketEvent = buildCodexResponsesWebSocketEvent({
+    ...base,
+    input: continuationInput,
+    tools: []
+  });
+  const appended = buildCodexResponsesRequest({ ...base, input: [...base.input, { type: 'message', role: 'user', content: 'next' }] });
+  const event = buildCodexResponsesWebSocketEvent(base, false);
+  resetCodexToolSchemaCache();
+  const firstBuild = buildCodexResponsesRequestWithMetrics(base);
+  const secondBuild = buildCodexResponsesRequestWithMetrics(base);
+  assertEqual(request.prompt_cache_key, identity.threadId, 'stable prompt cache key');
+  assertEqual(request.client_metadata.turn_id, identity.turnId, 'turn metadata');
+  assertEqual(JSON.parse(request.client_metadata['x-codex-turn-metadata']).turn_started_at_unix_ms, base.turnStartedAtUnixMs, 'turn start metadata');
+  assertEqual(request.parallel_tool_calls, true, 'parallel tools');
+  assertEqual(request.instructions, base.instructions, 'configured instructions preserved with tools');
+  assertEqual(request.include[0], 'reasoning.encrypted_content', 'encrypted reasoning include');
+  assertEqual(JSON.stringify(request.reasoning), JSON.stringify({ effort: 'high', summary: 'auto' }), 'explicit compatibility reasoning preserved');
+  assertEqual(JSON.stringify(compatibilityDefaultReasoningRequest.reasoning), JSON.stringify({ effort: 'medium', summary: 'auto' }), 'compatibility default reasoning is normalized');
+  assertEqual(JSON.stringify(noReasoningRequest.reasoning), JSON.stringify({ effort: 'none' }), 'none does not request a reasoning summary');
+  assertEqual(compatibilityDefaultReasoningRequest.include[0], 'reasoning.encrypted_content', 'compatibility default reasoning requests encrypted content');
+  assertEqual('reasoning' in standardRequest, false, 'standard request does not add default reasoning');
+  assertEqual('include' in standardRequest, false, 'standard request does not request encrypted reasoning');
+  assertEqual(hostedWebSearchRequest.tools[0].type, 'web_search', 'OpenAI hosted web search tool is preserved');
+  assertEqual(hostedWebSearchRequest.include[0], 'web_search_call.action.sources', 'web search sources are requested');
+  assertEqual(hostedWebSearchRequest.tools.some((tool) => tool.type === 'function'), false, 'hosted web search does not become a function tool');
+  assertEqual(
+    areCodexRequestsIncrementallyCompatible(standardRequest, hostedWebSearchRequest),
+    false,
+    'hosted tool selection invalidates continuation reuse'
+  );
+  assertEqual(
+    areCodexRequestsIncrementallyCompatible(hostedWebSearchRequest, configuredHostedWebSearchRequest),
+    false,
+    'Web Search configuration changes invalidate continuation reuse'
+  );
+  assertEqual('id' in sanitizedHttpRequest.input[0], false, 'HTTP continuation omits empty response item id');
+  assertEqual('id' in sanitizedHttpRequest.input[1], false, 'HTTP continuation omits legacy response item id');
+  assertEqual(sanitizedHttpRequest.input[2].id, 'msg_valid123', 'HTTP continuation preserves valid response item id');
+  assertEqual(sanitizedHttpRequest.input[3].id, 'fc_valid123', 'HTTP continuation preserves valid function call item id');
+  assertEqual(sanitizedHttpRequest.input[3].call_id, 'call_valid', 'HTTP continuation preserves call id');
+  assertEqual('id' in sanitizedHttpRequest.input[4], false, 'HTTP continuation omits legacy tool output item id');
+  assertEqual(sanitizedHttpRequest.input[4].call_id, 'call_valid', 'HTTP continuation preserves tool output call id');
+  assertEqual('id' in sanitizedWebSocketEvent.input[1], false, 'WebSocket continuation omits legacy response item id');
+  assertEqual(sanitizedWebSocketEvent.input[2].id, 'msg_valid123', 'WebSocket continuation preserves valid response item id');
+  assertEqual(sanitizedWebSocketEvent.input[4].call_id, 'call_valid', 'WebSocket continuation preserves tool output call id');
+  assertEqual(sanitizedHttpRequest.input[5].id, 'ws_valid123', 'HTTP continuation preserves web search item id');
+  assertEqual(sanitizedWebSocketEvent.input[5].id, 'ws_valid123', 'WebSocket continuation preserves web search item id');
+  assertEqual(event.generate, false, 'prewarm generate flag');
+  assertEqual('stream' in event, false, 'WebSocket stream omitted');
+  assertEqual(areCodexRequestsIncrementallyCompatible(request, appended), true, 'input ignored by request fingerprint');
+  assertEqual(firstBuild.metrics.legacyToolSchemaCacheHit, false, 'first legacy request build reports schema cache miss');
+  assertEqual(secondBuild.metrics.legacyToolSchemaCacheHit, true, 'second legacy request build reports schema cache hit');
+  assertEqual(firstBuild.metrics.toolSchemaBytes > 0, true, 'request build reports tool schema bytes');
+  assertEqual(secondBuild.metrics.requestBuildMs >= 0, true, 'request build reports duration');
+  console.log('Smoke test passed: shared Codex request construction and incremental fingerprint are correct.');
+} finally {
+  await loaded.dispose();
+}

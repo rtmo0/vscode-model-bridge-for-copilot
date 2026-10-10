@@ -1,26 +1,26 @@
 {
-  "name": "antropic-for-copilot",
-  "displayName": "Anthropic For Copilot - Use Claude with VS Code Agent",
-  "description": "Use your signed-in Claude Code account as a VS Code Language Model Provider without an API key.",
+  "name": "model-bridge-for-copilot",
+  "displayName": "Model Bridge for Copilot - Claude, Codex & Local LLMs",
+  "description": "Use Claude subscriptions, ChatGPT Codex, and local LM Studio models in native VS Code Chat and Agent mode.",
   "version": "0.1.0",
   "publisher": "samarin-aa-aka-rtm00",
-  "icon": "assets/anthropic-for-copilot.png",
+  "icon": "assets/model-bridge-for-copilot.png",
   "license": "MIT",
   "preview": true,
   "pricing": "Free",
   "galleryBanner": {
-    "color": "#5B3F93",
+    "color": "#151927",
     "theme": "dark"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/rtmo0/vscode-antropic-for-copilot.git"
+    "url": "https://github.com/rtmo0/vscode-model-bridge-for-copilot.git"
   },
-  "homepage": "https://github.com/rtmo0/vscode-antropic-for-copilot#readme",
+  "homepage": "https://github.com/rtmo0/vscode-model-bridge-for-copilot#readme",
   "bugs": {
-    "url": "https://github.com/rtmo0/vscode-antropic-for-copilot/issues"
+    "url": "https://github.com/rtmo0/vscode-model-bridge-for-copilot/issues"
   },
-  "qna": "https://github.com/rtmo0/vscode-antropic-for-copilot/discussions",
+  "qna": "https://github.com/rtmo0/vscode-model-bridge-for-copilot/discussions",
   "engines": {
     "vscode": "^1.104.0"
   },
@@ -29,15 +29,20 @@
     "Chat"
   ],
   "keywords": [
-    "anthropic",
     "claude",
-    "claude-code",
+    "anthropic",
+    "codex",
+    "chatgpt",
+    "lm-studio",
+    "local-llm",
     "copilot",
     "agent",
     "language-model"
   ],
   "activationEvents": [
-    "onLanguageModelChatProvider:anthropic-for-copilot",
+    "onLanguageModelChatProvider:model-bridge-claude",
+    "onLanguageModelChatProvider:model-bridge-codex",
+    "onLanguageModelChatProvider:model-bridge-lmstudio",
     "onStartupFinished"
   ],
   "extensionKind": [
@@ -49,11 +54,14 @@
     "check": "tsc -p ./ --noEmit",
     "compile": "npm run check && node esbuild.mjs",
     "build": "node esbuild.mjs",
-    "test:smoke": "node test/smokeClaudeProtocol.mjs && node test/smokeClaudeCli.mjs && node test/smokeClaudeSessionStore.mjs && node test/smokeAnthropicProviderOptions.mjs && node test/smokeClaudeUsageStatus.mjs",
+    "test:smoke": "node test/smokeManifest.mjs && npm run test:claude && npm run test:codex && npm run test:lmstudio",
     "package:vsix": "vsce package --no-dependencies",
     "package": "vsce package --no-dependencies",
     "watch": "tsc -watch -p ./",
-    "vscode:prepublish": "npm run compile"
+    "vscode:prepublish": "npm run compile",
+    "test:codex": "node test/providers/codex/smokeCodexProtocol.mjs && node test/providers/codex/smokeCodexRequestBuilder.mjs && node test/providers/codex/smokeResponsesClient.mjs && node test/providers/codex/smokeConversationReuse.mjs && node test/providers/codex/smokeAccountUsage.mjs && node test/providers/codex/smokeAuth.mjs && node test/providers/codex/smokeToolCallTracking.mjs",
+    "test:lmstudio": "node test/providers/lmstudio/smokeLmStudioProtocol.mjs && node test/providers/lmstudio/smokeLmStudioProvider.mjs",
+    "test:claude": "node test/providers/claude/smokeClaudeProtocol.mjs && node test/providers/claude/smokeClaudeCli.mjs && node test/providers/claude/smokeClaudeSessionStore.mjs && node test/providers/claude/smokeClaudeProviderOptions.mjs && node test/providers/claude/smokeClaudeUsageStatus.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.15.30",
@@ -63,105 +71,302 @@
     "typescript": "^5.9.2"
   },
   "contributes": {
+    "authentication": [
+      {
+        "id": "model-bridge-codex",
+        "label": "Model Bridge: Codex",
+        "authorizationServerGlobs": [
+          "https://auth.openai.com/*"
+        ]
+      }
+    ],
     "languageModelChatProviders": [
       {
-        "vendor": "anthropic-for-copilot",
+        "vendor": "model-bridge-claude",
         "displayName": "Claude",
-        "managementCommand": "anthropicForCopilot.manage"
+        "managementCommand": "modelBridge.claude.manage"
+      },
+      {
+        "vendor": "model-bridge-codex",
+        "displayName": "Codex",
+        "managementCommand": "modelBridge.codex.manage"
+      },
+      {
+        "vendor": "model-bridge-lmstudio",
+        "displayName": "LM Studio",
+        "managementCommand": "modelBridge.lmstudio.manage"
+      }
+    ],
+    "languageModelTools": [
+      {
+        "name": "modelBridge_codex_webSearch",
+        "displayName": "Codex Web Search",
+        "modelDescription": "Search the web for up-to-date information.",
+        "userDescription": "Search the web for up-to-date information through your signed-in Codex account.",
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "codexWebSearch",
+        "icon": "$(globe)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "The web search query."
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "additionalProperties": false
+        },
+        "tags": [
+          "web",
+          "search"
+        ]
       }
     ],
     "commands": [
       {
-        "command": "anthropicForCopilot.manage",
+        "command": "modelBridge.manage",
+        "title": "Manage Providers",
+        "category": "Model Bridge"
+      },
+      {
+        "command": "modelBridge.doctor",
+        "title": "Open Provider Diagnostics",
+        "category": "Model Bridge"
+      },
+      {
+        "command": "modelBridge.claude.manage",
         "title": "Manage",
-        "category": "Anthropic for Copilot"
+        "category": "Model Bridge: Claude"
       },
       {
-        "command": "anthropicForCopilot.auth.signInWithClaudeCode",
+        "command": "modelBridge.claude.auth.signInWithClaudeCode",
         "title": "Sign in with Claude Code",
-        "category": "Anthropic for Copilot"
+        "category": "Model Bridge: Claude"
       },
       {
-        "command": "anthropicForCopilot.auth.signInWithBrowser",
+        "command": "modelBridge.claude.auth.signInWithBrowser",
         "title": "Sign in with Browser",
-        "category": "Anthropic for Copilot"
+        "category": "Model Bridge: Claude"
       },
       {
-        "command": "anthropicForCopilot.auth.showStatus",
+        "command": "modelBridge.claude.auth.showStatus",
         "title": "Show Sign-In Status",
-        "category": "Anthropic for Copilot"
+        "category": "Model Bridge: Claude"
       },
       {
-        "command": "anthropicForCopilot.auth.signOut",
+        "command": "modelBridge.claude.auth.signOut",
         "title": "Sign Out",
-        "category": "Anthropic for Copilot"
+        "category": "Model Bridge: Claude"
       },
       {
-        "command": "anthropicForCopilot.refreshModels",
+        "command": "modelBridge.claude.refreshModels",
         "title": "Refresh Models",
-        "category": "Anthropic for Copilot"
+        "category": "Model Bridge: Claude"
       },
       {
-        "command": "anthropicForCopilot.showUsage",
-        "title": "Show Account Usage",
-        "category": "Anthropic for Copilot"
+        "command": "modelBridge.claude.showAccountLimits",
+        "title": "Show Account Limits",
+        "category": "Model Bridge: Claude"
       },
       {
-        "command": "anthropicForCopilot.installClaudeCode",
+        "command": "modelBridge.claude.refreshAccountLimits",
+        "title": "Refresh Account Limits",
+        "category": "Model Bridge: Claude"
+      },
+      {
+        "command": "modelBridge.claude.installClaudeCode",
         "title": "Install Claude Code",
-        "category": "Anthropic for Copilot"
+        "category": "Model Bridge: Claude"
       },
       {
-        "command": "anthropicForCopilot.openSettings",
+        "command": "modelBridge.claude.openSettings",
         "title": "Open Settings",
-        "category": "Anthropic for Copilot"
+        "category": "Model Bridge: Claude"
       },
       {
-        "command": "anthropicForCopilot.openLogs",
+        "command": "modelBridge.claude.openLogs",
         "title": "Open Logs",
-        "category": "Anthropic for Copilot"
+        "category": "Model Bridge: Claude"
       },
       {
-        "command": "anthropicForCopilot.doctor",
+        "command": "modelBridge.claude.doctor",
         "title": "Run Doctor",
-        "category": "Anthropic for Copilot"
+        "category": "Model Bridge: Claude"
       },
       {
-        "command": "anthropicForCopilot.quickConfigure",
+        "command": "modelBridge.claude.quickConfigure",
         "title": "Quick Configure Models",
-        "category": "Anthropic for Copilot"
+        "category": "Model Bridge: Claude"
       },
       {
-        "command": "anthropicForCopilot.updateClaudeCode",
+        "command": "modelBridge.claude.updateClaudeCode",
         "title": "Update Claude Code",
-        "category": "Anthropic for Copilot"
+        "category": "Model Bridge: Claude"
+      },
+      {
+        "command": "modelBridge.codex.manage",
+        "title": "Manage",
+        "category": "Model Bridge: Codex"
+      },
+      {
+        "command": "modelBridge.codex.openDebugLogs",
+        "title": "Open Logs",
+        "category": "Model Bridge: Codex"
+      },
+      {
+        "command": "modelBridge.codex.openSettings",
+        "title": "Open Settings",
+        "category": "Model Bridge: Codex"
+      },
+      {
+        "command": "modelBridge.codex.refreshAccountLimits",
+        "title": "Refresh Account Limits",
+        "category": "Model Bridge: Codex"
+      },
+      {
+        "command": "modelBridge.codex.showAccountLimits",
+        "title": "Show Account Limits",
+        "category": "Model Bridge: Codex"
+      },
+      {
+        "command": "modelBridge.codex.auth.signInWithBrowser",
+        "title": "Sign in with Browser",
+        "category": "Model Bridge: Codex"
+      },
+      {
+        "command": "modelBridge.codex.enableNativeToolSearch",
+        "title": "Enable Native Tool Search",
+        "category": "Model Bridge: Codex"
+      },
+      {
+        "command": "modelBridge.codex.restoreVSCodeToolGrouping",
+        "title": "Use VS Code Virtual Tool Groups",
+        "category": "Model Bridge: Codex"
+      },
+      {
+        "command": "modelBridge.codex.showNativeToolSearchStatus",
+        "title": "Show Native Tool Search Status",
+        "category": "Model Bridge: Codex"
+      },
+      {
+        "command": "modelBridge.codex.showEffectiveProtocol",
+        "title": "Show Effective Protocol",
+        "category": "Model Bridge: Codex"
+      },
+      {
+        "command": "modelBridge.codex.auth.signOut",
+        "title": "Sign Out (All Accounts)",
+        "category": "Model Bridge: Codex"
+      },
+      {
+        "command": "modelBridge.codex.auth.addAccount",
+        "title": "Add Account in Browser",
+        "category": "Model Bridge: Codex"
+      },
+      {
+        "command": "modelBridge.codex.auth.switchAccount",
+        "title": "Switch Codex Account",
+        "category": "Model Bridge: Codex"
+      },
+      {
+        "command": "modelBridge.codex.auth.removeAccount",
+        "title": "Remove Codex Account",
+        "category": "Model Bridge: Codex"
+      },
+      {
+        "command": "modelBridge.codex.auth.showStatus",
+        "title": "Show Sign-In Status",
+        "category": "Model Bridge: Codex"
+      },
+      {
+        "command": "modelBridge.lmstudio.manage",
+        "title": "Manage",
+        "category": "Model Bridge: LM Studio"
+      },
+      {
+        "command": "modelBridge.lmstudio.doctor",
+        "title": "Run Doctor",
+        "category": "Model Bridge: LM Studio"
+      },
+      {
+        "command": "modelBridge.lmstudio.refreshModels",
+        "title": "Refresh Models",
+        "category": "Model Bridge: LM Studio"
+      },
+      {
+        "command": "modelBridge.lmstudio.setApiToken",
+        "title": "Set API Token",
+        "category": "Model Bridge: LM Studio"
+      },
+      {
+        "command": "modelBridge.lmstudio.clearApiToken",
+        "title": "Clear API Token",
+        "category": "Model Bridge: LM Studio"
+      },
+      {
+        "command": "modelBridge.lmstudio.openSettings",
+        "title": "Open Settings",
+        "category": "Model Bridge: LM Studio"
+      },
+      {
+        "command": "modelBridge.lmstudio.openDocumentation",
+        "title": "Open Documentation",
+        "category": "Model Bridge: LM Studio"
+      },
+      {
+        "command": "modelBridge.lmstudio.openLogs",
+        "title": "Open Logs",
+        "category": "Model Bridge: LM Studio"
+      },
+      {
+        "command": "modelBridge.codex.doctor",
+        "title": "Run Doctor",
+        "category": "Model Bridge: Codex"
+      },
+      {
+        "command": "modelBridge.codex.testConnection",
+        "title": "Test Connection",
+        "category": "Model Bridge: Codex"
+      },
+      {
+        "command": "modelBridge.claude.testConnection",
+        "title": "Test Connection",
+        "category": "Model Bridge: Claude"
+      },
+      {
+        "command": "modelBridge.lmstudio.testConnection",
+        "title": "Test Connection",
+        "category": "Model Bridge: LM Studio"
       }
     ],
     "configuration": {
-      "title": "Anthropic for Copilot",
+      "title": "Model Bridge",
       "properties": {
-        "anthropicForCopilot.claudePath": {
+        "modelBridge.claude.claudePath": {
           "type": "string",
           "default": "claude",
           "description": "Path to the official Claude Code executable. With the default value, the extension also detects ~/.local/bin/claude. The CLI owns and stores the signed-in session."
         },
-        "anthropicForCopilot.model": {
+        "modelBridge.claude.model": {
           "type": "string",
           "default": "default",
           "description": "Fallback Claude Code model alias used when a model identifier is unavailable."
         },
-        "anthropicForCopilot.instructions": {
+        "modelBridge.claude.instructions": {
           "type": "string",
           "default": "You are a helpful coding assistant integrated with VS Code. Follow the user’s instructions and use only tools explicitly provided by VS Code.",
           "description": "Instructions appended to Claude Code for every VS Code Chat request."
         },
-        "anthropicForCopilot.maxOutputTokens": {
+        "modelBridge.claude.maxOutputTokens": {
           "type": "integer",
           "default": 128000,
           "minimum": 1,
           "description": "Output-token capacity advertised to VS Code. Claude Code and the selected model enforce the actual limit."
         },
-        "anthropicForCopilot.defaultEffort": {
+        "modelBridge.claude.defaultEffort": {
           "type": "string",
           "default": "high",
           "enum": [
@@ -180,7 +385,7 @@
           ],
           "description": "Default thinking effort shown in the model picker."
         },
-        "anthropicForCopilot.defaultContextSize": {
+        "modelBridge.claude.defaultContextSize": {
           "type": "integer",
           "default": 1000000,
           "enum": [
@@ -197,12 +402,12 @@
           ],
           "description": "Default Claude Code auto-compact context window shown in the model picker."
         },
-        "anthropicForCopilot.usageStatusBar": {
+        "modelBridge.claude.usageStatusBar": {
           "type": "boolean",
           "default": true,
-          "description": "Show Claude 5-hour and 7-day account utilization in the status bar after usage data is received."
+          "description": "Show Claude account limits (5-hour session and weekly remaining) in the status bar. Limits refresh on startup, every 5 minutes, and after each request, like the Codex account limits."
         },
-        "anthropicForCopilot.enabledModels": {
+        "modelBridge.claude.enabledModels": {
           "type": "array",
           "default": [
             "default",
@@ -226,19 +431,415 @@
           },
           "description": "Claude model aliases shown in the VS Code model picker."
         },
-        "anthropicForCopilot.requestTimeoutSeconds": {
+        "modelBridge.claude.requestTimeoutSeconds": {
           "type": "integer",
           "default": 600,
           "minimum": 30,
           "maximum": 3600,
           "description": "Maximum time for one Claude Code request before the process is terminated."
         },
-        "anthropicForCopilot.sessionContinuation": {
+        "modelBridge.claude.sessionContinuation": {
           "type": "boolean",
           "default": false,
           "description": "Reuse compatible Claude Code sessions for incremental follow-ups. This improves prompt caching, but Claude Code persists those conversations in its local session history."
+        },
+        "modelBridge.codex.baseURL": {
+          "type": "string",
+          "default": "https://chatgpt.com/backend-api/codex/responses",
+          "description": "ChatGPT Codex backend URL used for both /responses and /models discovery."
+        },
+        "modelBridge.codex.clientVersion": {
+          "type": "string",
+          "default": "999.0.0",
+          "description": "Advanced override for the client_version query parameter used only when discovering upstream models; independent of the Codex protocol version.",
+          "tags": [
+            "advanced"
+          ]
+        },
+        "modelBridge.codex.accountUsageShowAccountName": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show the active account name next to Codex account limits in the status bar.",
+          "tags": [
+            "advanced"
+          ]
+        },
+        "modelBridge.codex.transport": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "http",
+            "websocket"
+          ],
+          "enumDescriptions": [
+            "Prefer the Responses WebSocket path and automatically fall back to HTTP streaming when the WebSocket transport is unavailable.",
+            "Always use the existing HTTP streaming path.",
+            "Always use the Responses WebSocket path and surface any transport error directly."
+          ],
+          "description": "Transport policy used for Responses streaming requests."
+        },
+        "modelBridge.codex.websocketPrewarm": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "enabled",
+            "disabled"
+          ],
+          "enumDescriptions": [
+            "Skip speculative generate:false requests and rely on idle WebSocket preconnection.",
+            "Experimentally run a bounded generate:false prewarm before a fresh formal WebSocket request.",
+            "Never run generate:false WebSocket prewarming."
+          ],
+          "description": "Controls bounded generate:false WebSocket prewarming for ChatGPT Codex sessions."
+        },
+        "modelBridge.codex.requestCompression": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "enabled",
+            "disabled"
+          ],
+          "description": "Controls Zstandard compression for large ChatGPT Codex Responses requests."
+        },
+        "modelBridge.codex.webSearchExternalAccess": {
+          "type": "boolean",
+          "default": true,
+          "description": "Allow hosted Web Search to fetch live internet content. Disable this to use only cached or indexed content."
+        },
+        "modelBridge.codex.webSearchContextSize": {
+          "type": "string",
+          "default": "default",
+          "enum": [
+            "default",
+            "low",
+            "medium",
+            "high"
+          ],
+          "enumDescriptions": [
+            "Let the backend use its default search context size.",
+            "Use less search-result context for quick lookups.",
+            "Use a balanced amount of search-result context.",
+            "Use more search-result context for detailed answers."
+          ],
+          "description": "Amount of web search result context made available to the model. This does not guarantee a source count."
+        },
+        "modelBridge.codex.webSearchAllowedDomains": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$"
+          },
+          "maxItems": 100,
+          "uniqueItems": true,
+          "description": "Optional Web Search domain allowlist. Enter domain names without http://, https://, paths, or wildcards; matching subdomains are included."
+        },
+        "modelBridge.codex.webSearchStatusDetail": {
+          "type": "string",
+          "default": "actionsAndSources",
+          "enum": [
+            "compact",
+            "actions",
+            "actionsAndSources"
+          ],
+          "enumDescriptions": [
+            "Show only a compact completed Web Search status.",
+            "Show search queries, opened pages, and find-in-page actions.",
+            "Show actions plus clickable source pages returned by search calls."
+          ],
+          "description": "Controls how much completed hosted Web Search activity is shown in Chat."
+        },
+        "modelBridge.codex.webSearchStatusMaxSources": {
+          "type": "number",
+          "default": 3,
+          "minimum": 0,
+          "maximum": 10,
+          "description": "Maximum clickable source pages shown on each detailed Web Search status line. Set to 0 to hide sources while keeping action details."
+        },
+        "modelBridge.codex.protocolProfile": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "codexCompatible",
+            "minimal",
+            "custom"
+          ],
+          "enumDescriptions": [
+            "Enable Codex protocol fields only for the official ChatGPT Codex endpoint with Codex credentials.",
+            "Use the current Codex-compatible projection on the official ChatGPT Codex endpoint.",
+            "Do not add Codex-specific headers or client metadata.",
+            "Enable the Codex-compatible projection for an explicitly configured HTTPS endpoint."
+          ],
+          "description": "Controls when Codex protocol compatibility fields are generated.",
+          "tags": [
+            "advanced"
+          ]
+        },
+        "modelBridge.codex.requestIdentityProfile": {
+          "type": "string",
+          "default": "extension",
+          "enum": [
+            "extension",
+            "codexCliCompatible",
+            "neutral",
+            "custom"
+          ],
+          "enumDescriptions": [
+            "Identify requests as Model Bridge: Codex.",
+            "Use a client identity compatible with the pinned Codex CLI protocol baseline.",
+            "Do not add Model Bridge: Codex branding while preserving required Codex protocol fields.",
+            "Use the configured custom client identity."
+          ],
+          "description": "Controls the client-declared identity independently of Codex protocol compatibility."
+        },
+        "modelBridge.codex.customRequestIdentity": {
+          "type": "object",
+          "default": {},
+          "properties": {
+            "originator": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "userAgent": {
+              "type": "string",
+              "maxLength": 512
+            },
+            "version": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "agentName": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "source": {
+              "type": "string",
+              "maxLength": 128
+            }
+          },
+          "additionalProperties": false,
+          "description": "Validated client identity fields used only by the custom request identity profile."
+        },
+        "modelBridge.codex.headerOverrides": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Additional or replacement request headers. Authentication, transport invariants, and Turn State are always protected; generated identity headers require unsafe overrides.",
+          "tags": [
+            "advanced"
+          ]
+        },
+        "modelBridge.codex.clientMetadataOverrides": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "description": "Extra flat Responses client_metadata string values. Up to 16 entries are accepted; Codex-owned keys require unsafe overrides.",
+          "tags": [
+            "advanced"
+          ]
+        },
+        "modelBridge.codex.turnMetadataOverrides": {
+          "type": "object",
+          "default": {},
+          "description": "Extra fields merged into the canonical x-codex-turn-metadata snapshot. Codex-owned identity and tool fields require unsafe overrides.",
+          "tags": [
+            "advanced"
+          ]
+        },
+        "modelBridge.codex.omitGeneratedHeaders": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true,
+          "description": "Generated header names to omit. Protected credentials and transport headers cannot be omitted.",
+          "tags": [
+            "advanced"
+          ]
+        },
+        "modelBridge.codex.allowUnsafeProtocolOverrides": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow advanced overrides of generated Codex identity fields. Credentials, WebSocket security headers, transport invariants, and Turn State remain protected.",
+          "tags": [
+            "advanced"
+          ]
+        },
+        "modelBridge.codex.nativeToolSearch": {
+          "type": "string",
+          "default": "disabled",
+          "enum": [
+            "disabled",
+            "auto",
+            "enabled"
+          ],
+          "enumDescriptions": [
+            "Leave tool discovery to VS Code. Preserve Virtual Tool Groups when VS Code supplies them; otherwise use standard function tools. This is the default.",
+            "After Native Tool Search is enabled, use hosted Tool Search for compatible requests with at least 12 selected tools and either substantial deferred schemas or 24 tools.",
+            "Use hosted Tool Search for compatible Codex requests. Retry once with legacy function tools only when the backend explicitly rejects Tool Search."
+          ],
+          "description": "Advanced Native Tool Search policy. Use the Model Bridge Codex commands to opt in or restore VS Code Virtual Tool Groups. Opting in disables Copilot Virtual Tool Groups globally, which also affects Claude, LM Studio, and Copilot models.",
+          "tags": [
+            "advanced"
+          ]
+        },
+        "modelBridge.codex.nativeToolSearchMaxToolsPerNamespace": {
+          "type": "number",
+          "default": 8,
+          "minimum": 1,
+          "maximum": 8,
+          "description": "Maximum number of deferred functions in each Native Tool Search namespace. Lower values create smaller groups; 8 is the supported upper limit. Values below 3 are mainly useful for diagnostics.",
+          "tags": [
+            "advanced"
+          ]
+        },
+        "modelBridge.codex.model": {
+          "type": "string",
+          "default": "gpt-5.5",
+          "description": "Fallback model ID used only when upstream model discovery is unavailable.",
+          "tags": [
+            "advanced"
+          ]
+        },
+        "modelBridge.codex.includeHiddenModels": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include every otherwise callable model that the upstream catalog marks hidden. API-key compatibility filtering still applies.",
+          "tags": [
+            "advanced"
+          ]
+        },
+        "modelBridge.codex.disabledModels": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "Model IDs to hide from discovered upstream models. Use this to suppress backend-advertised models that are not callable for your account.",
+          "tags": [
+            "advanced"
+          ]
+        },
+        "modelBridge.codex.modelAliases": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Map stale or rejected model IDs to replacement model IDs. Aliased source models are hidden when the replacement is available, and stale selections resolve to the replacement.",
+          "tags": [
+            "advanced"
+          ]
+        },
+        "modelBridge.codex.instructions": {
+          "type": "string",
+          "default": "You are a helpful coding assistant integrated with VS Code.",
+          "description": "Top-level Responses API instructions. Sent with every request.",
+          "editPresentation": "multilineText"
+        },
+        "modelBridge.codex.defaultServiceTier": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "default",
+            "fast"
+          ],
+          "enumDescriptions": [
+            "Do not send service_tier explicitly. The Codex backend will use its default or project-configured tier.",
+            "Use the standard service tier for the selected model. This is the most reliable explicit option on the Codex backend.",
+            "Request the backend's faster processing path."
+          ],
+          "description": "Default Responses API service_tier behavior for each request. On the Codex backend, choosing auto omits the field and lets the backend decide."
+        },
+        "modelBridge.codex.defaultReasoningEffort": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "none",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "ultra"
+          ],
+          "enumDescriptions": [
+            "Use the model's default Thinking Effort unless the chat UI supplies an explicit selection.",
+            "Skip extra reasoning for the fastest replies when the selected model supports it.",
+            "Use a very light reasoning pass for small edits and quick follow-ups.",
+            "Fast responses with lighter reasoning.",
+            "Balances speed and reasoning depth for everyday tasks.",
+            "Greater reasoning depth for complex problems.",
+            "Extra high reasoning depth for complex problems.",
+            "Maximum reasoning depth for the hardest problems.",
+            "Maximum reasoning with automatic task delegation."
+          ],
+          "description": "Fallback reasoning effort used when the chat UI does not provide a Thinking Effort selection."
+        },
+        "modelBridge.codex.maxOutputTokens": {
+          "type": "number",
+          "default": 8192,
+          "description": "Maximum output tokens to request when the active credential type supports max_output_tokens. Ignored for Codex account tokens.",
+          "tags": [
+            "advanced"
+          ]
+        },
+        "modelBridge.codex.modelPricingUsdPerMTok": {
+          "type": "object",
+          "default": {},
+          "description": "Optional local USD pricing per 1M tokens to override the built-in official pricing used for estimated cost display."
+        },
+        "modelBridge.lmstudio.baseURL": {
+          "type": "string",
+          "default": "http://127.0.0.1:1234/v1",
+          "description": "LM Studio OpenAI-compatible server URL."
+        },
+        "modelBridge.lmstudio.contextSize": {
+          "type": "integer",
+          "default": 32768,
+          "minimum": 1024,
+          "description": "Fallback context window advertised for local models when the server does not publish one."
+        },
+        "modelBridge.lmstudio.maxOutputTokens": {
+          "type": "integer",
+          "default": 8192,
+          "minimum": 1,
+          "description": "Maximum output tokens requested from LM Studio."
+        },
+        "modelBridge.lmstudio.temperature": {
+          "type": "number",
+          "default": 0.2,
+          "minimum": 0,
+          "maximum": 2,
+          "description": "Default sampling temperature for local models."
+        },
+        "modelBridge.lmstudio.requestTimeoutSeconds": {
+          "type": "integer",
+          "default": 600,
+          "minimum": 30,
+          "maximum": 3600,
+          "description": "LM Studio request timeout."
         }
       }
     }
+  },
+  "dependencies": {
+    "https-proxy-agent": "^7.0.6",
+    "openai": "7.8.0",
+    "undici": "^7.29.0",
+    "ws": "^8.21.0"
   }
 }

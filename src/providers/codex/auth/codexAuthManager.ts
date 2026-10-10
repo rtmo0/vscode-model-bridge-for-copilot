@@ -1,0 +1,231 @@
+import * as vscode from 'vscode';
+import { parseCodexAuthJson } from './codexAuthJsonImporter';
+import { CodexAuthLock } from './codexAuthLock';
+import { getJwtExpiration, isJwtExpiringSoon } from './codexJwt';
+import { parseCodexAccountIdentity } from './codexAccountIdentity';
+import { CodexSecretStore, randomRevision } from './codexSecretStore';
+import { ACCESS_TOKEN_REFRESH_WINDOW_MS, PERIODIC_REFRESH_INTERVAL_MS } from './codexTokenRefresh';
+import { CodexOAuthClient, type OAuthTokens } from './codexOAuthClient';
+import { signInWithLoopback } from './codexLoopbackLogin';
+import { signInWithDeviceCode } from './codexDeviceCodeLogin';
+import { AuthRequiredError, type CodexAuthChangeEvent, type CodexAuthStatus, type CodexCredentialRecord, type CodexCredentialSnapshot, type CodexCredentialSource, type ExtensionOAuthCredentialRecord, type RefreshableCodexCredentialRecord, ReauthRequiredError, TokenRefreshError } from './codexAuthTypes';
+import type { CodexLogger } from '../codexLogger';
+
+export interface CodexAccountSummary {
+  accountKey: string;
+  source: CodexCredentialSource;
+  email?: string;
+  accountId?: string;
+  isActive: boolean;
+  accessTokenExpiresAt?: number;
+  reauthRequired: boolean;
+}
+
+export class CodexAuthManager implements vscode.Disposable {
+  private readonly refreshPromises = new Map<string, Promise<CodexCredentialSnapshot>>();
+  private readonly permanentFailureRevisions = new Map<string, string>();
+  private periodicRefreshTimer?: ReturnType<typeof setInterval>;
+  private periodicRefreshInFlight?: Promise<void>;
+  private readonly changes = new vscode.EventEmitter<CodexAuthChangeEvent>();
+  readonly onDidChangeAuth = this.changes.event;
+  constructor(
+    private readonly store: CodexSecretStore,
+    private readonly lockFor: (accountKey: string) => CodexAuthLock,
+    private readonly oauth = new CodexOAuthClient(),
+    private readonly logger?: CodexLogger
+  ) {}
+  dispose(): void {
+    if (this.periodicRefreshTimer) clearInterval(this.periodicRefreshTimer);
+    this.changes.dispose();
+  }
+
+  startPeriodicRefresh(): Promise<void> {
+    if (!this.periodicRefreshTimer) {
+      this.periodicRefreshTimer = setInterval(() => { void this.refreshStoredAccounts(); }, 5 * 60 * 1000);
+    }
+    return this.refreshStoredAccounts();
+  }
+
+  private refreshStoredAccounts(): Promise<void> {
+    if (this.periodicRefreshInFlight) return this.periodicRefreshInFlight;
+    const run = (async () => {
+      try {
+        const accountKeys = await this.store.listAccountKeys();
+        await Promise.all(accountKeys.map(async (accountKey) => {
+          try {
+            await this.refreshIfNeeded('proactive', accountKey);
+          } catch (error) {
+            this.logger?.warn('refresh.background-failed', { accountKey, error });
+          }
+        }));
+      } catch (error) {
+        this.logger?.warn('refresh.background-list-failed', { error });
+      }
+    })();
+    this.periodicRefreshInFlight = run.finally(() => { this.periodicRefreshInFlight = undefined; });
+    return this.periodicRefreshInFlight;
+  }
+
+  async getActiveAccountKey(): Promise<string | undefined> { return this.store.getActiveAccountKey(); }
+
+  async listAccounts(): Promise<CodexAccountSummary[]> {
+    const keys = await this.store.listAccountKeys();
+    const active = await this.store.getActiveAccountKey();
+    const accounts: CodexAccountSummary[] = [];
+    for (const accountKey of keys) {
+      const record = await this.store.getCredential(accountKey);
+      if (!record) continue;
+      const snapshot = snapshotFor(record);
+      accounts.push({
+        accountKey,
+        source: record.source,
+        email: record.email,
+        accountId: snapshot.accountId,
+        isActive: accountKey === active,
+        accessTokenExpiresAt: snapshot.expiresAt,
+        reauthRequired: this.permanentFailureRevisions.get(accountKey) === snapshot.revision
+      });
+    }
+    this.logger?.debug('accounts.listed', { count: accounts.length, activeAccountKey: active });
+    return accounts;
+  }
+
+  async getStatus(accountKey?: string): Promise<CodexAuthStatus> {
+    const key = accountKey ?? await this.store.getActiveAccountKey();
+    if (!key) return { authenticated: false };
+    const record = await this.store.getCredential(key);
+    if (!record) return { authenticated: false };
+    const snapshot = snapshotFor(record);
+    return { authenticated: true, accountKey: key, source: record.source, email: record.email, accountId: snapshot.accountId, accessTokenExpiresAt: snapshot.expiresAt, lastRefresh: isRefreshableCredential(record) ? record.lastRefreshAt : record.loadedAt, reauthRequired: this.permanentFailureRevisions.get(key) === snapshot.revision };
+  }
+
+  async getCredentialSnapshot(accountKey?: string): Promise<CodexCredentialSnapshot> {
+    const key = accountKey ?? await this.store.getActiveAccountKey();
+    if (!key) throw new AuthRequiredError();
+    const record = await this.store.getCredential(key);
+    if (!record) throw new AuthRequiredError();
+    if (isRefreshableCredential(record)) await this.refreshIfNeeded('proactive', key);
+    const latest = await this.store.getCredential(key);
+    if (!latest) throw new AuthRequiredError();
+    return snapshotFor(latest, key);
+  }
+
+  /** Reads a stored credential without triggering proactive token refresh. */
+  async getStoredCredentialSnapshot(accountKey?: string): Promise<CodexCredentialSnapshot> {
+    const key = accountKey ?? await this.store.getActiveAccountKey();
+    if (!key) throw new AuthRequiredError();
+    const record = await this.store.getCredential(key);
+    if (!record) throw new AuthRequiredError();
+    return snapshotFor(record, key);
+  }
+
+  async getAccessToken(accountKey?: string): Promise<string> { return (await this.getCredentialSnapshot(accountKey)).accessToken; }
+
+  async switchAccount(accountKey: string): Promise<void> {
+    const previous = await this.store.getActiveAccountKey();
+    await this.store.setActiveAccountKey(accountKey);
+    this.logger?.info('account.switched', { previousAccountKey: previous, accountKey, changed: previous !== accountKey });
+    if (previous !== accountKey) this.changes.fire({ reason: 'activeAccountChanged', accountKey });
+  }
+
+  async importAuthJson(rawJson: string): Promise<string> {
+    const logger = this.logger?.operation('auth.import');
+    const bundle = parseCodexAuthJson(rawJson);
+    const identity = parseCodexAccountIdentity(bundle.tokens);
+    const record: RefreshableCodexCredentialRecord = { schemaVersion: 2, source: 'importedAuthJson', revision: randomRevision(), tokens: bundle.tokens, email: identity.email, accessTokenExpiresAt: getJwtExpiration(bundle.tokens.access_token), lastRefreshAt: bundle.last_refresh ?? new Date().toISOString() };
+    const accountKey = await this.store.setCredential(record);
+    this.permanentFailureRevisions.delete(accountKey);
+    logger?.info('import.completed', { accountKey, hasUserId: identity.userId !== undefined, hasAccountId: identity.accountId !== undefined, hasEmail: identity.email !== undefined });
+    this.fire('signedIn', accountKey, record.revision);
+    return accountKey;
+  }
+
+  async signInWithBrowser(): Promise<string> {
+    const logger = this.logger?.operation('auth.browser-sign-in');
+    logger?.info('sign-in.started');
+    let accountKey: string | undefined;
+    await signInWithLoopback(
+      this.oauth,
+      (uri) => vscode.env.openExternal(vscode.Uri.parse(uri)),
+      undefined,
+      (stage, port) => logger?.debug('sign-in.stage', { stage, port }),
+      async (tokens) => {
+        accountKey = await this.completeSignIn(tokens);
+        logger?.info('sign-in.completed');
+      }
+    );
+    return accountKey!;
+  }
+  async signInWithDeviceCode(): Promise<string> { const logger = this.logger?.operation('auth.device-code-sign-in'); try { const accountKey = await this.completeSignIn(await signInWithDeviceCode(this.oauth)); logger?.info('sign-in.completed'); return accountKey; } catch (error) { logger?.error('sign-in.failed', error); throw error; } }
+
+  async refreshIfNeeded(reason: 'proactive' | 'unauthorized' = 'proactive', accountKey?: string, expectedRevision?: string): Promise<CodexCredentialSnapshot> {
+    const key = accountKey ?? await this.store.getActiveAccountKey();
+    if (!key) throw new AuthRequiredError();
+    const existing = this.refreshPromises.get(key);
+    if (existing) {
+      this.logger?.debug('refresh.joined', { accountKey: key, reason });
+      const snapshot = await existing;
+      if (reason === 'unauthorized' && expectedRevision === snapshot.revision) {
+        return this.refreshIfNeeded(reason, key, expectedRevision);
+      }
+      return snapshot;
+    }
+    const promise = this.doRefresh(reason, key, expectedRevision).finally(() => { if (this.refreshPromises.get(key) === promise) this.refreshPromises.delete(key); });
+    this.refreshPromises.set(key, promise);
+    return promise;
+  }
+
+  async refreshAfter401(accountKey?: string): Promise<void> { const key = accountKey ?? await this.store.getActiveAccountKey(); await this.recoverFromUnauthorized({ accountKey: key!, snapshotRevision: (await this.getCredentialSnapshot(key)).revision, visibleActivity: false, reason: 'http401' }); }
+
+  async recoverFromUnauthorized(context: { accountKey: string; snapshotRevision: string; visibleActivity: boolean; reason: 'http401' | 'websocketUnauthorized' }): Promise<CodexCredentialSnapshot> {
+    if (context.visibleActivity) throw new ReauthRequiredError('Authentication failed after response activity started.');
+    return this.refreshIfNeeded('unauthorized', context.accountKey, context.snapshotRevision);
+  }
+
+  /** Sign out / remove an account. Defaults to the active account. */
+  async signOut(accountKey?: string): Promise<void> {
+    const key = accountKey ?? await this.store.getActiveAccountKey();
+    if (!key) return;
+    const record = await this.store.getCredential(key);
+    if (record?.source === 'extensionOAuth') await this.oauth.revoke(record.tokens.refresh_token).catch(() => undefined);
+    await this.store.deleteCredential(key);
+    this.permanentFailureRevisions.delete(key);
+    this.refreshPromises.delete(key);
+    this.fire('signedOut', key);
+  }
+
+  /** Sign out of every stored account. */
+  async signOutAll(): Promise<void> {
+    for (const account of await this.listAccounts()) {
+      await this.signOut(account.accountKey);
+    }
+  }
+
+  private async doRefresh(reason: 'proactive' | 'unauthorized', accountKey: string, expectedRevision?: string): Promise<CodexCredentialSnapshot> {
+    const existing = await this.store.getCredential(accountKey); if (!existing) throw new AuthRequiredError(); if (!isRefreshableCredential(existing)) return snapshotFor(existing, accountKey); if (this.permanentFailureRevisions.get(accountKey) === existing.revision) throw new ReauthRequiredError(); if (reason === 'unauthorized' && expectedRevision && existing.revision !== expectedRevision) return snapshotFor(existing, accountKey); if (reason === 'proactive' && !needsRefresh(existing)) return snapshotFor(existing, accountKey);
+    const logger = this.logger?.operation('auth.refresh', { reason, accountKey, source: existing.source });
+    try {
+      return await this.lockFor(accountKey).withLock(async () => { const latest = await this.store.getCredential(accountKey); if (!latest) throw new AuthRequiredError(); if (!isRefreshableCredential(latest)) return snapshotFor(latest, accountKey); if (this.permanentFailureRevisions.get(accountKey) === latest.revision) throw new ReauthRequiredError(); if (reason === 'unauthorized' && expectedRevision && latest.revision !== expectedRevision) return snapshotFor(latest, accountKey); if (reason === 'proactive' && !needsRefresh(latest)) return snapshotFor(latest, accountKey); logger?.info('refresh.started', { accessTokenExpiresAt: latest.accessTokenExpiresAt }); const tokens = await this.oauth.refresh(latest.tokens.refresh_token); const replacement: RefreshableCodexCredentialRecord = { ...latest, revision: randomRevision(), tokens: { ...latest.tokens, ...tokens }, accessTokenExpiresAt: getJwtExpiration(tokens.access_token ?? latest.tokens.access_token), lastRefreshAt: new Date().toISOString() }; await this.store.setCredential(replacement, accountKey); this.permanentFailureRevisions.delete(accountKey); this.fire('tokensRefreshed', accountKey, replacement.revision); logger?.info('refresh.completed'); return snapshotFor(replacement, accountKey); });
+    } catch (error) {
+      logger?.warn('refresh.failed', { error, remoteCredentialRejected: error instanceof TokenRefreshError && error.status === 401 });
+      if (error instanceof TokenRefreshError && error.permanent) {
+        const current = await this.store.getCredential(accountKey);
+        if (!current) throw new AuthRequiredError();
+        if (current.revision !== existing.revision) return snapshotFor(current, accountKey);
+        if (this.permanentFailureRevisions.get(accountKey) !== current.revision) {
+          this.permanentFailureRevisions.set(accountKey, current.revision);
+          this.fire('reauthRequired', accountKey);
+        }
+        throw new ReauthRequiredError();
+      }
+      throw error;
+    }
+  }
+
+  private async completeSignIn(tokens: OAuthTokens): Promise<string> { const identity = parseCodexAccountIdentity(tokens); const record: ExtensionOAuthCredentialRecord = { schemaVersion: 2, source: 'extensionOAuth', revision: randomRevision(), tokens, email: identity.email, accessTokenExpiresAt: getJwtExpiration(tokens.access_token), lastRefreshAt: new Date().toISOString() }; const accountKey = await this.store.setCredential(record); this.permanentFailureRevisions.delete(accountKey); this.logger?.info('sign-in.completed', { accountKey, hasUserId: identity.userId !== undefined, hasAccountId: identity.accountId !== undefined, hasEmail: identity.email !== undefined }); this.fire('signedIn', accountKey, record.revision); return accountKey; }
+
+  private fire(reason: CodexAuthChangeEvent['reason'], accountKey: string, revision?: string): void { this.changes.fire({ reason, accountKey, revision }); }
+}
+export function needsRefresh(record: CodexCredentialRecord | { tokens: { access_token: string }; last_refresh?: string; lastRefreshAt?: string }): boolean { const access = 'tokens' in record ? record.tokens.access_token : record.accessToken; const last = 'lastRefreshAt' in record ? record.lastRefreshAt : ('last_refresh' in record ? record.last_refresh : undefined); return isJwtExpiringSoon(access, ACCESS_TOKEN_REFRESH_WINDOW_MS) || !last || !Number.isFinite(Date.parse(last)) || Date.now() - Date.parse(last) >= PERIODIC_REFRESH_INTERVAL_MS; }
+function snapshotFor(record: CodexCredentialRecord, accountKey?: string): CodexCredentialSnapshot { return isRefreshableCredential(record) ? { source: record.source, accessToken: record.tokens.access_token, accountId: parseCodexAccountIdentity(record.tokens).accountId, accountKey, expiresAt: record.accessTokenExpiresAt ?? getJwtExpiration(record.tokens.access_token), revision: record.revision, refreshable: true } : { source: record.source, accessToken: record.accessToken, accountId: record.accountId, accountKey, expiresAt: record.accessTokenExpiresAt, revision: record.revision, refreshable: false }; }
+function isRefreshableCredential(record: CodexCredentialRecord | undefined): record is RefreshableCodexCredentialRecord { return record?.source === 'extensionOAuth' || record?.source === 'importedAuthJson'; }

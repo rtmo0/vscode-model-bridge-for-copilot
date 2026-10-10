@@ -7,7 +7,7 @@
       "request": "launch",
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}",
-        "--disable-extension=samarin-aa-aka-rtm00.antropic-for-copilot"
+        "--disable-extension=samarin-aa-aka-rtm00.model-bridge-for-copilot"
       ],
       "outFiles": [
         "${workspaceFolder}/out/**/*.js"

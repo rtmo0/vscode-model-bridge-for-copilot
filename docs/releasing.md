@@ -3,7 +3,8 @@
 The extension uses the same publisher identity as the sibling MongoDB extension:
 
 - Marketplace publisher: `samarin-aa-aka-rtm00`
-- Repository: `rtmo0/vscode-antropic-for-copilot`
+- Marketplace technical name: `model-bridge-for-copilot`
+- Repository: `rtmo0/vscode-model-bridge-for-copilot`
 
 ## Create a release
 

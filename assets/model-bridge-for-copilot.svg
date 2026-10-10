@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Model Bridge for Copilot">
+  <defs>
+    <linearGradient id="bg" x1="38" y1="24" x2="472" y2="492" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#252235"/>
+      <stop offset="0.52" stop-color="#171B29"/>
+      <stop offset="1" stop-color="#10262B"/>
+    </linearGradient>
+    <radialGradient id="warm" cx="0" cy="0" r="1" gradientTransform="translate(256 92) rotate(90) scale(214)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F09765" stop-opacity=".34"/>
+      <stop offset="1" stop-color="#F09765" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="cool" cx="0" cy="0" r="1" gradientTransform="translate(371 395) rotate(-140) scale(206)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#60D7EF" stop-opacity=".26"/>
+      <stop offset="1" stop-color="#60D7EF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="link" x1="156" y1="116" x2="380" y2="404" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F2A06F"/>
+      <stop offset=".5" stop-color="#F5EFE8"/>
+      <stop offset="1" stop-color="#62D5EE"/>
+    </linearGradient>
+    <filter id="shadow" x="-35%" y="-35%" width="170%" height="170%">
+      <feDropShadow dx="0" dy="15" stdDeviation="18" flood-color="#05070D" flood-opacity=".52"/>
+    </filter>
+  </defs>
+
+  <rect x="12" y="12" width="488" height="488" rx="116" fill="url(#bg)"/>
+  <rect x="12" y="12" width="488" height="488" rx="116" fill="url(#warm)"/>
+  <rect x="12" y="12" width="488" height="488" rx="116" fill="url(#cool)"/>
+  <rect x="18" y="18" width="476" height="476" rx="110" fill="none" stroke="#FFF" stroke-opacity=".1" stroke-width="3"/>
+
+  <g filter="url(#shadow)">
+    <!-- Symmetric bridge connecting three independent model providers. -->
+    <path d="M256 155L256 206M174 350L218 309M338 350L294 309" fill="none" stroke="#F5EFE8" stroke-opacity=".84" stroke-width="22" stroke-linecap="round"/>
+    <path d="M256 103C349 103 414 176 414 265C414 353 344 420 256 420C168 420 98 353 98 265C98 176 163 103 256 103Z"
+          fill="none" stroke="url(#link)" stroke-width="24" stroke-linecap="round" stroke-dasharray="130 28"/>
+
+    <!-- Claude subscription node. -->
+    <circle cx="256" cy="112" r="62" fill="#2B1D24" stroke="#F19B69" stroke-width="13"/>
+    <path d="M256 76V148M220 112H292M231 87L281 137M281 87L231 137" stroke="#FFD8C0" stroke-width="12" stroke-linecap="round"/>
+    <circle cx="256" cy="112" r="14" fill="#F19B69"/>
+
+    <!-- Codex/cloud coding node. -->
+    <circle cx="146" cy="386" r="62" fill="#132821" stroke="#5AD39A" stroke-width="13"/>
+    <path d="M130 360L105 386L130 412M162 360L187 386L162 412M154 350L138 422" fill="none" stroke="#C1F6D9" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- LM Studio/local server node. -->
+    <circle cx="366" cy="386" r="62" fill="#112A34" stroke="#61D4EE" stroke-width="13"/>
+    <rect x="332" y="352" width="68" height="27" rx="9" fill="none" stroke="#C4F1FA" stroke-width="9"/>
+    <rect x="332" y="393" width="68" height="27" rx="9" fill="none" stroke="#C4F1FA" stroke-width="9"/>
+    <circle cx="382" cy="365.5" r="5" fill="#61D4EE"/>
+    <circle cx="382" cy="406.5" r="5" fill="#61D4EE"/>
+
+    <!-- Central VS Code model-routing bridge. -->
+    <path d="M256 196L320 233V307L256 344L192 307V233L256 196Z" fill="#171D2B" stroke="#F5EFE8" stroke-width="14"/>
+    <path d="M221 247C221 229 235 215 253 215H259C277 215 291 229 291 247V273C291 294 274 311 253 311H240L222 325L226 305C216 297 210 286 210 273V258C210 252 215 247 221 247Z"
+          fill="#202A39" stroke="url(#link)" stroke-width="10" stroke-linejoin="round"/>
+    <circle cx="241" cy="264" r="7" fill="#F19B69"/>
+    <circle cx="271" cy="264" r="7" fill="#61D4EE"/>
+    <path d="M241 287C250 294 262 294 271 287" fill="none" stroke="#F5EFE8" stroke-width="7" stroke-linecap="round"/>
+  </g>
+</svg>

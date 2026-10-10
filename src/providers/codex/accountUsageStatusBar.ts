@@ -1,0 +1,278 @@
+import * as vscode from 'vscode';
+import { buildCodexAccountUsageDisplay, fetchCodexAccountUsage, type CodexAccountUsageSnapshot } from './accountUsage';
+import type { CodexAuthManager } from './auth/codexAuthManager';
+import { getProviderConfig } from './config';
+import { getApiCredentials, getCodexCredentialsForAccount, type ApiCredentials } from './secrets';
+import { type CodexLogSink, CodexLogger, createCodexLogger } from './codexLogger';
+import { resolveRequestIdentity } from './codexRequestIdentity';
+import type { UsageSink } from './provider';
+import { formatLatestRequestLine, type LatestRequestUsage } from '../usageSummary';
+
+const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+
+interface AccountUsageEntry {
+  accountKey: string;
+  label: string;
+  isActive: boolean;
+  snapshot?: CodexAccountUsageSnapshot;
+  error?: boolean;
+}
+
+export class CodexAccountUsageStatusBar implements vscode.Disposable, UsageSink {
+  private readonly statusBarItem: vscode.StatusBarItem;
+  private readonly disposables: vscode.Disposable[];
+  private readonly refreshTimer: ReturnType<typeof setInterval>;
+  private readonly usageByAccount = new Map<string, AccountUsageEntry>();
+  private refreshInFlight?: Promise<void>;
+  private refreshPending = false;
+  private selectedModel = getProviderConfig().model;
+  private latestRequest?: LatestRequestUsage;
+  private showAccountName = getProviderConfig().accountUsageShowAccountName;
+  private readonly logger: CodexLogger;
+
+  constructor(
+    private readonly context: vscode.ExtensionContext,
+    logger: CodexLogger | CodexLogSink,
+    private readonly authManager?: CodexAuthManager
+  ) {
+    this.logger = logger instanceof CodexLogger ? logger : createCodexLogger(logger, 'account-usage');
+    this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 101);
+    this.statusBarItem.name = 'Codex Account Limits';
+    this.statusBarItem.command = 'modelBridge.codex.showAccountLimits';
+    this.statusBarItem.hide();
+
+    this.refreshTimer = setInterval(() => {
+      void this.refresh();
+    }, REFRESH_INTERVAL_MS);
+
+    this.disposables = [
+      this.statusBarItem,
+      vscode.workspace.onDidChangeConfiguration((event) => {
+        if (event.affectsConfiguration('modelBridge.codex.accountUsageShowAccountName')) {
+          this.showAccountName = getProviderConfig().accountUsageShowAccountName;
+          this.renderActive();
+        }
+        if (event.affectsConfiguration('modelBridge.codex.baseURL') || event.affectsConfiguration('modelBridge.codex.model')) {
+          if (event.affectsConfiguration('modelBridge.codex.model')) {
+            this.selectedModel = getProviderConfig().model;
+          }
+          void this.refresh();
+        }
+      })
+    ];
+
+    void this.refresh();
+  }
+
+  setSelectedModel(model: string): void {
+    if (!model.trim() || model === this.selectedModel) {
+      return;
+    }
+
+    this.selectedModel = model;
+    this.renderActive();
+  }
+
+  async refresh(): Promise<void> {
+    if (this.refreshInFlight) {
+      this.refreshPending = true;
+      return this.refreshInFlight;
+    }
+
+    this.refreshInFlight = this.refreshUntilCurrent().finally(() => {
+      this.refreshInFlight = undefined;
+    });
+
+    return this.refreshInFlight;
+  }
+
+  private async refreshUntilCurrent(): Promise<void> {
+    do {
+      this.refreshPending = false;
+      await this.refreshNow();
+    } while (this.refreshPending);
+  }
+
+  async showDetails(): Promise<void> {
+    if (this.usageByAccount.size === 0) {
+      await this.refresh();
+    }
+
+    if (this.usageByAccount.size === 0) {
+      vscode.window.showInformationMessage('No Codex account limits are available.');
+      return;
+    }
+
+    interface UsagePick extends vscode.QuickPickItem {
+      accountKey?: string;
+    }
+
+    const items: UsagePick[] = [...this.usageByAccount.values()].map((entry) => {
+      if (entry.error || !entry.snapshot) {
+        return {
+          label: `${entry.isActive ? '$(check) ' : ''}${entry.label}`,
+          description: entry.isActive ? 'active' : '',
+          detail: 'Usage unavailable (failed to load)',
+          accountKey: entry.accountKey
+        };
+      }
+      const display = buildCodexAccountUsageDisplay(entry.snapshot, this.selectedModel);
+      return {
+        label: `${entry.isActive ? '$(check) ' : ''}${entry.label}`,
+        description: [entry.isActive ? 'active' : '', display.compactText ?? ''].filter(Boolean).join('  '),
+        detail: display.tooltip.replace(/\n/g, '  •  '),
+        accountKey: entry.accountKey
+      };
+    });
+
+    const actions: vscode.QuickPickItem = { label: '$(sync) Refresh all', };
+    const picked = await vscode.window.showQuickPick(
+      [...items, { label: '', kind: vscode.QuickPickItemKind.Separator }, actions],
+      {
+        title: 'Codex Account Limits',
+        placeHolder: 'Select an account to set it active, or refresh all.'
+      }
+    );
+
+    if (!picked) {
+      return;
+    }
+
+    if (picked === actions) {
+      await this.refresh();
+      return;
+    }
+
+    const selected = (picked as UsagePick).accountKey;
+    if (selected && this.authManager) {
+      const entry = this.usageByAccount.get(selected);
+      if (entry && !entry.isActive) {
+        await this.authManager.switchAccount(selected);
+        vscode.window.showInformationMessage(`Active Codex account switched to ${entry.label}.`);
+        // Switching fires onDidChangeAuth which triggers a refresh; render immediately too.
+        this.renderActive();
+      }
+    }
+  }
+
+  record(event: Parameters<UsageSink['record']>[0]): void {
+    this.latestRequest = {
+      model: event.model,
+      inputTokens: event.usage.input_tokens ?? 0,
+      cachedInputTokens: event.usage.input_tokens_details?.cached_tokens ?? 0,
+      outputTokens: event.usage.output_tokens ?? 0,
+      reasoningTokens: event.usage.output_tokens_details?.reasoning_tokens ?? 0
+    };
+    this.renderActive();
+  }
+
+  getCompactText(): string | undefined {
+    const active = [...this.usageByAccount.values()].find((entry) => entry.isActive);
+    return active?.snapshot ? buildCodexAccountUsageDisplay(active.snapshot, this.selectedModel).compactText : undefined;
+  }
+
+  dispose(): void {
+    clearInterval(this.refreshTimer);
+    vscode.Disposable.from(...this.disposables).dispose();
+  }
+
+  private async refreshNow(): Promise<void> {
+    const logger = this.logger.operation('account-usage.refresh');
+    const config = getProviderConfig();
+    const activeCredentials = await getApiCredentials(this.context, this.authManager);
+
+    if (!activeCredentials || activeCredentials.kind !== 'codexAccessToken') {
+      this.usageByAccount.clear();
+      this.statusBarItem.hide();
+      logger.debug('refresh.skipped', { reason: 'credentials-unavailable' });
+      return;
+    }
+
+    const storedAccounts = this.authManager && activeCredentials.accountKey
+      ? await this.authManager.listAccounts()
+      : [];
+    const accounts: Array<{ accountKey: string; label: string; isActive: boolean; credentials?: ApiCredentials }> = storedAccounts.length > 0
+      ? storedAccounts.map((account) => ({
+          accountKey: account.accountKey,
+          label: account.email ?? account.accountId ?? account.accountKey,
+          isActive: account.accountKey === activeCredentials.accountKey
+        }))
+      : [{
+          accountKey: activeCredentials.accountKey ?? 'configured-codex-credentials',
+          label: activeCredentials.headers['ChatGPT-Account-ID'] ?? 'Active Codex account',
+          isActive: true,
+          credentials: activeCredentials
+        }];
+
+    // Fetch each account's usage in parallel; keep prior snapshots for accounts that fail.
+    const results = await Promise.all(accounts.map(async (account) => {
+      const label = account.label;
+      const credentials = account.credentials
+        ?? (this.authManager ? await getCodexCredentialsForAccount(this.authManager, account.accountKey, account.isActive) : undefined);
+      if (!credentials) {
+        return { accountKey: account.accountKey, label, isActive: account.isActive, error: true } as AccountUsageEntry;
+      }
+      try {
+        const snapshot = await fetchCodexAccountUsage({
+          baseURL: config.baseURL,
+          credentials,
+          selectedModel: this.selectedModel,
+          clientIdentity: resolveRequestIdentity({
+            ...config.requestIdentity,
+            extensionVersion: getExtensionVersion(this.context),
+            extensionUserAgent: buildCodexUserAgent(getExtensionVersion(this.context))
+          })
+        });
+        return { accountKey: account.accountKey, label, isActive: account.isActive, snapshot } as AccountUsageEntry;
+      } catch (error) {
+        logger.warn('refresh.account-failed', { accountKey: account.accountKey, error });
+        const prior = this.usageByAccount.get(account.accountKey);
+        return { accountKey: account.accountKey, label, isActive: account.isActive, snapshot: prior?.snapshot, error: !prior?.snapshot } as AccountUsageEntry;
+      }
+    }));
+
+    this.usageByAccount.clear();
+    for (const entry of results) {
+      this.usageByAccount.set(entry.accountKey, entry);
+    }
+
+    this.renderActive();
+    logger.debug('refresh.completed', { accountCount: results.length, selectedModel: this.selectedModel });
+  }
+
+  private renderActive(): void {
+    const active = [...this.usageByAccount.values()].find((entry) => entry.isActive)
+      ?? this.usageByAccount.values().next().value;
+
+    if (!active || !active.snapshot) {
+      this.statusBarItem.hide();
+      return;
+    }
+
+    const display = buildCodexAccountUsageDisplay(active.snapshot, this.selectedModel);
+    if (!display.compactText) {
+      this.statusBarItem.hide();
+      return;
+    }
+
+    const accountCount = this.usageByAccount.size;
+    const prefix = accountCount > 1 && this.showAccountName ? `$(organization) ${active.label} ` : '';
+    const tooltip = this.latestRequest ? `${display.tooltip}\n${formatLatestRequestLine(this.latestRequest)}` : display.tooltip;
+    this.statusBarItem.text = `${prefix}${display.compactText}`;
+    this.statusBarItem.tooltip = accountCount > 1
+      ? `${tooltip}\n\n${accountCount} accounts — click to view all.`
+      : tooltip;
+    this.statusBarItem.show();
+  }
+}
+
+function buildCodexUserAgent(extensionVersion: string): string {
+  return `model-bridge-for-copilot/${extensionVersion} (${process.platform}; ${process.arch}; vscode/${vscode.version})`;
+}
+
+function getExtensionVersion(context: vscode.ExtensionContext): string {
+  const extension = (context as vscode.ExtensionContext & {
+    extension?: { packageJSON?: { version?: unknown } };
+  }).extension;
+  return typeof extension?.packageJSON?.version === 'string' ? extension.packageJSON.version : '0.0.0';
+}
