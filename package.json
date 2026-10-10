@@ -49,7 +49,7 @@
     "check": "tsc -p ./ --noEmit",
     "compile": "npm run check && node esbuild.mjs",
     "build": "node esbuild.mjs",
-    "test:smoke": "node test/smokeClaudeProtocol.mjs && node test/smokeClaudeCli.mjs",
+    "test:smoke": "node test/smokeClaudeProtocol.mjs && node test/smokeClaudeCli.mjs && node test/smokeAnthropicProviderOptions.mjs && node test/smokeClaudeUsageStatus.mjs",
     "package:vsix": "vsce package --no-dependencies",
     "package": "vsce package --no-dependencies",
     "watch": "tsc -watch -p ./",
@@ -102,6 +102,11 @@
         "category": "Anthropic for Copilot"
       },
       {
+        "command": "anthropicForCopilot.showUsage",
+        "title": "Show Account Usage",
+        "category": "Anthropic for Copilot"
+      },
+      {
         "command": "anthropicForCopilot.installClaudeCode",
         "title": "Install Claude Code",
         "category": "Anthropic for Copilot"
@@ -137,9 +142,50 @@
         },
         "anthropicForCopilot.maxOutputTokens": {
           "type": "integer",
-          "default": 64000,
+          "default": 128000,
           "minimum": 1,
           "description": "Output-token capacity advertised to VS Code. Claude Code and the selected model enforce the actual limit."
+        },
+        "anthropicForCopilot.defaultEffort": {
+          "type": "string",
+          "default": "high",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "enumDescriptions": [
+            "Fastest responses with minimal extended thinking.",
+            "Balanced speed and reasoning.",
+            "Deeper reasoning for coding tasks.",
+            "Very deep reasoning for difficult tasks.",
+            "Maximum available reasoning effort."
+          ],
+          "description": "Default thinking effort shown in the model picker."
+        },
+        "anthropicForCopilot.defaultContextSize": {
+          "type": "integer",
+          "default": 1000000,
+          "enum": [
+            100000,
+            200000,
+            500000,
+            1000000
+          ],
+          "enumItemLabels": [
+            "100K",
+            "200K",
+            "500K",
+            "1M"
+          ],
+          "description": "Default Claude Code auto-compact context window shown in the model picker."
+        },
+        "anthropicForCopilot.usageStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show Claude 5-hour and 7-day account utilization in the status bar after usage data is received."
         }
       }
     }

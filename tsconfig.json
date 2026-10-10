@@ -17,6 +17,7 @@
     "src/anthropicExtension.ts",
     "src/anthropicProvider.ts",
     "src/claudeCli.ts",
-    "src/claudeProtocol.ts"
+    "src/claudeProtocol.ts",
+    "src/claudeUsageStatusBar.ts"
   ]
 }

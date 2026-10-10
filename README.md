@@ -17,6 +17,8 @@ Anthropic for Copilot is a VS Code Language Model Provider that connects the nat
 - Streams text and thinking from Claude Code's `stream-json` output.
 - Forwards selected VS Code Agent tools through a constrained tool-call protocol; VS Code remains responsible for tool execution, confirmation, and workspace trust.
 - Supports stable Claude Code model aliases: Default, Sonnet, Opus, and Haiku.
+- Adds model-picker controls for **Thinking Effort** (`Low` through `Maximum`) and **Context Size** (`100K` through `1M`).
+- Streams request token usage back to VS Code and shows Claude's 5-hour and 7-day account utilization in the status bar.
 - Never stores API keys or OAuth tokens in VS Code SecretStorage.
 
 ## Requirements
@@ -43,7 +45,10 @@ Use **Anthropic for Copilot: Show Sign-In Status** to run `claude auth status`, 
 1. Open VS Code Chat.
 2. Open the model picker.
 3. Choose **Claude** and then Default, Sonnet, Opus, or Haiku.
-4. Use Chat or Agent mode normally.
+4. Use the model options button to choose **Thinking Effort** and **Context Size** for the request.
+5. Use Chat or Agent mode normally.
+
+The status bar shows compact remaining account capacity such as `Claude 5h 75% · 7d 60%` after the first request. Hover it for remaining capacity and reset times, or click it for request token details. Claude Code emits these limits with model responses; there is no separate headless refresh endpoint, so values update whenever a request completes.
 
 Each request runs Claude Code in non-interactive print mode with streamed JSON output, session persistence disabled, and Claude Code's built-in tools disabled. Claude Code runs in safe mode so project/user customizations cannot alter provider requests while the normal saved Claude sign-in remains available. Selected VS Code tools are described explicitly to the model. This separation prevents the hidden CLI process from editing files or executing commands outside VS Code's normal tool confirmation flow.
 
@@ -52,6 +57,9 @@ Each request runs Claude Code in non-interactive print mode with streamed JSON o
 - `anthropicForCopilot.claudePath`: executable name or absolute path, default `claude`. The native installer location `~/.local/bin/claude` is detected automatically even when it is missing from `PATH`.
 - `anthropicForCopilot.model`: fallback Claude Code model alias, default `default`.
 - `anthropicForCopilot.instructions`: instructions appended to every request.
+- `anthropicForCopilot.defaultEffort`: default model-picker thinking effort.
+- `anthropicForCopilot.defaultContextSize`: default `100K`, `200K`, `500K`, or `1M` auto-compact window.
+- `anthropicForCopilot.usageStatusBar`: show or hide compact Claude account usage.
 - `anthropicForCopilot.maxOutputTokens`: output capacity advertised to VS Code.
 
 ## Privacy and security

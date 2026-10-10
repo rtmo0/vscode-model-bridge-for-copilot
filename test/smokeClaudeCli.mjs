@@ -77,6 +77,8 @@ console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false
   await cli.streamClaudeResponse({
     executable: fakeCliPath,
     model: 'sonnet',
+    effort: 'xhigh',
+    contextSize: 500000,
     prompt: '<user>\nHello\n</user>',
     systemPrompt: 'System instructions',
     markerNonce: 'nonce',
@@ -98,6 +100,8 @@ console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false
   assert(record.args.includes('--include-partial-messages'));
   assert.deepEqual(record.args.slice(record.args.indexOf('--tools'), record.args.indexOf('--tools') + 2), ['--tools', '']);
   assert.deepEqual(record.args.slice(record.args.indexOf('--model'), record.args.indexOf('--model') + 2), ['--model', 'sonnet']);
+  assert.deepEqual(record.args.slice(record.args.indexOf('--effort'), record.args.indexOf('--effort') + 2), ['--effort', 'xhigh']);
+  assert.deepEqual(record.args.slice(record.args.indexOf('--autocompact'), record.args.indexOf('--autocompact') + 2), ['--autocompact', '500k']);
   await assert.rejects(access(record.systemPromptPath, constants.F_OK));
 
   console.log('Claude CLI smoke tests passed.');

@@ -10,26 +10,69 @@ import {
   CLAUDE_MODELS,
   parseProviderModelId,
   toProviderModelId,
+  type ClaudeEffort,
   type ClaudePromptMessage,
-  type ClaudeToolDefinition
+  type ClaudeToolDefinition,
+  type ClaudeUsageUpdate
 } from './claudeProtocol';
 
 export interface AnthropicProviderConfig {
   claudePath: string;
   model: string;
   instructions: string;
+  defaultEffort: ClaudeEffort;
+  defaultContextSize: number;
   maxOutputTokens: number;
 }
+
+type RuntimeResponseOptions = vscode.ProvideLanguageModelChatResponseOptions & {
+  readonly modelConfiguration?: Record<string, unknown>;
+  readonly configuration?: Record<string, unknown>;
+};
+
+type ModelConfigurationSchema = {
+  readonly properties: {
+    readonly reasoningEffort: {
+      readonly type: 'string';
+      readonly title: 'Thinking Effort';
+      readonly enum: readonly ClaudeEffort[];
+      readonly enumItemLabels: readonly string[];
+      readonly enumDescriptions: readonly string[];
+      readonly default: ClaudeEffort;
+      readonly group: 'navigation';
+    };
+    readonly contextSize: {
+      readonly type: 'number';
+      readonly title: 'Context Size';
+      readonly enum: readonly number[];
+      readonly enumItemLabels: readonly string[];
+      readonly enumDescriptions: readonly string[];
+      readonly default: number;
+      readonly group: 'tokens';
+    };
+  };
+};
+
+type ModelPickerChatInformation = vscode.LanguageModelChatInformation & {
+  readonly configurationSchema: ModelConfigurationSchema;
+};
 
 type VSCodeWithThinkingPart = typeof vscode & {
   LanguageModelThinkingPart?: new (value: string | string[], id?: string) => vscode.LanguageModelResponsePart;
 };
 
+const CLAUDE_EFFORTS: readonly ClaudeEffort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
+const CLAUDE_CONTEXT_SIZES = [100_000, 200_000, 500_000, 1_000_000] as const;
+const USAGE_DATA_PART_MIME = 'usage';
+
 export class AnthropicModelProvider implements vscode.LanguageModelChatProvider, vscode.Disposable {
   private readonly modelsChanged = new vscode.EventEmitter<void>();
   readonly onDidChangeLanguageModelChatInformation = this.modelsChanged.event;
 
-  constructor(private readonly output: vscode.LogOutputChannel) {}
+  constructor(
+    private readonly output: vscode.LogOutputChannel,
+    private readonly usageSink?: (usage: ClaudeUsageUpdate) => void
+  ) {}
 
   dispose(): void {
     this.modelsChanged.dispose();
@@ -84,7 +127,7 @@ export class AnthropicModelProvider implements vscode.LanguageModelChatProvider,
       return [];
     }
 
-    return CLAUDE_MODELS.map((model) => ({
+    return CLAUDE_MODELS.map((model): ModelPickerChatInformation => ({
       id: toProviderModelId(model.id),
       name: model.name,
       family: 'claude',
@@ -93,6 +136,7 @@ export class AnthropicModelProvider implements vscode.LanguageModelChatProvider,
       maxOutputTokens: Math.min(model.maxOutputTokens, config.maxOutputTokens),
       tooltip: model.description,
       detail: `Runs through the signed-in Claude Code CLI (${status.authMethod ?? 'authenticated'}).`,
+      configurationSchema: buildModelConfigurationSchema(config),
       capabilities: {
         imageInput: false,
         toolCalling: true
@@ -109,6 +153,9 @@ export class AnthropicModelProvider implements vscode.LanguageModelChatProvider,
   ): Promise<void> {
     const config = getAnthropicProviderConfig();
     const selectedModel = parseProviderModelId(model.id, config.model);
+    const runtimeOptions = options as RuntimeResponseOptions;
+    const effort = resolveEffortOption(runtimeOptions, config.defaultEffort);
+    const contextSize = resolveContextSizeOption(runtimeOptions, config.defaultContextSize);
     const tools = normalizeTools(options.tools ?? []);
     const markerNonce = randomBytes(12).toString('hex');
     const promptMessages = messages.map(convertMessage);
@@ -116,9 +163,12 @@ export class AnthropicModelProvider implements vscode.LanguageModelChatProvider,
     let textCharacters = 0;
     let thinkingCharacters = 0;
     let toolCallCount = 0;
+    let usage: ClaudeUsageUpdate = {};
 
     this.output.info('Starting Claude Code request', {
       model: selectedModel,
+      effort,
+      contextSize,
       messageCount: messages.length,
       toolCount: tools.length,
       hasWorkspace: Boolean(workspaceFolder)
@@ -127,6 +177,8 @@ export class AnthropicModelProvider implements vscode.LanguageModelChatProvider,
     await streamClaudeResponse({
       executable: config.claudePath,
       model: selectedModel,
+      effort,
+      contextSize,
       prompt: buildClaudePrompt(promptMessages),
       systemPrompt: buildClaudeSystemPrompt(config.instructions, tools, markerNonce),
       markerNonce,
@@ -156,9 +208,18 @@ export class AnthropicModelProvider implements vscode.LanguageModelChatProvider,
             call.name,
             call.arguments
           ));
+        },
+        onUsage: (update) => {
+          usage = mergeUsageUpdates(usage, update);
+          this.usageSink?.(update);
         }
       }
     });
+
+    const usagePart = createUsageDataPart(usage);
+    if (usagePart) {
+      progress.report(usagePart);
+    }
 
     this.output.info('Claude Code request completed', {
       model: selectedModel,
@@ -187,8 +248,100 @@ export function getAnthropicProviderConfig(): AnthropicProviderConfig {
       'instructions',
       'You are a helpful coding assistant integrated with VS Code. Follow the user’s instructions and use only tools explicitly provided by VS Code.'
     ),
-    maxOutputTokens: normalizePositiveInteger(config.get('maxOutputTokens', 64_000), 64_000)
+    defaultEffort: normalizeEffort(config.get('defaultEffort', 'high'), 'high'),
+    defaultContextSize: normalizeContextSize(config.get('defaultContextSize', 1_000_000), 1_000_000),
+    maxOutputTokens: normalizePositiveInteger(config.get('maxOutputTokens', 128_000), 128_000)
   };
+}
+
+export function buildModelConfigurationSchema(config: AnthropicProviderConfig): ModelConfigurationSchema {
+  return {
+    properties: {
+      reasoningEffort: {
+        type: 'string',
+        title: 'Thinking Effort',
+        enum: CLAUDE_EFFORTS,
+        enumItemLabels: ['Low', 'Medium', 'High', 'Extra High', 'Maximum'],
+        enumDescriptions: [
+          'Fastest responses with minimal extended thinking.',
+          'Balanced speed and reasoning.',
+          'Deeper reasoning for coding tasks.',
+          'Very deep reasoning for difficult tasks.',
+          'Maximum available reasoning effort.'
+        ],
+        default: config.defaultEffort,
+        group: 'navigation'
+      },
+      contextSize: {
+        type: 'number',
+        title: 'Context Size',
+        enum: CLAUDE_CONTEXT_SIZES,
+        enumItemLabels: ['100K', '200K', '500K', '1M'],
+        enumDescriptions: [
+          'Compact earlier for faster, smaller conversations.',
+          'Standard context for ordinary coding sessions.',
+          'Extended context for larger repositories and long conversations.',
+          'Maximum Claude context for long-running work.'
+        ],
+        default: config.defaultContextSize,
+        group: 'tokens'
+      }
+    }
+  };
+}
+
+export function resolveEffortOption(options: RuntimeResponseOptions, fallback: ClaudeEffort): ClaudeEffort {
+  for (const candidate of getModelOptionCandidates(options, 'reasoningEffort')) {
+    if (typeof candidate === 'string' && CLAUDE_EFFORTS.includes(candidate as ClaudeEffort)) {
+      return candidate as ClaudeEffort;
+    }
+  }
+  return fallback;
+}
+
+export function resolveContextSizeOption(options: RuntimeResponseOptions, fallback: number): number {
+  for (const candidate of getModelOptionCandidates(options, 'contextSize')) {
+    if (typeof candidate === 'number' && CLAUDE_CONTEXT_SIZES.includes(candidate as typeof CLAUDE_CONTEXT_SIZES[number])) {
+      return candidate;
+    }
+  }
+  return fallback;
+}
+
+function getModelOptionCandidates(options: RuntimeResponseOptions, key: string): unknown[] {
+  return [
+    options.modelOptions?.[key],
+    options.modelConfiguration?.[key],
+    options.configuration?.[key]
+  ];
+}
+
+function mergeUsageUpdates(current: ClaudeUsageUpdate, update: ClaudeUsageUpdate): ClaudeUsageUpdate {
+  return {
+    ...current,
+    ...Object.fromEntries(Object.entries(update).filter(([, value]) => value !== undefined))
+  };
+}
+
+function createUsageDataPart(usage: ClaudeUsageUpdate): vscode.LanguageModelResponsePart | undefined {
+  const inputTokens = (usage.inputTokens ?? 0)
+    + (usage.cacheCreationInputTokens ?? 0)
+    + (usage.cacheReadInputTokens ?? 0);
+  const outputTokens = usage.outputTokens ?? 0;
+  if (inputTokens === 0 && outputTokens === 0) {
+    return undefined;
+  }
+  return vscode.LanguageModelDataPart.json({
+    prompt_tokens: inputTokens,
+    completion_tokens: outputTokens,
+    total_tokens: inputTokens + outputTokens,
+    prompt_tokens_details: {
+      cached_tokens: usage.cacheReadInputTokens ?? 0
+    },
+    completion_tokens_details: {
+      reasoning_tokens: usage.thinkingTokens ?? 0
+    }
+  }, USAGE_DATA_PART_MIME) as vscode.LanguageModelResponsePart;
 }
 
 function convertMessage(message: vscode.LanguageModelChatRequestMessage): ClaudePromptMessage {
@@ -261,6 +414,18 @@ function resolveClaudePath(configuredPath: string): string {
     ? [join(process.env.LOCALAPPDATA ?? '', 'Programs', 'claude', 'claude.exe')]
     : [join(homedir(), '.local', 'bin', 'claude')];
   return candidates.find((candidate) => candidate.length > 0 && existsSync(candidate)) ?? normalized;
+}
+
+function normalizeEffort(value: unknown, fallback: ClaudeEffort): ClaudeEffort {
+  return typeof value === 'string' && CLAUDE_EFFORTS.includes(value as ClaudeEffort)
+    ? value as ClaudeEffort
+    : fallback;
+}
+
+function normalizeContextSize(value: unknown, fallback: number): number {
+  return typeof value === 'number' && CLAUDE_CONTEXT_SIZES.includes(value as typeof CLAUDE_CONTEXT_SIZES[number])
+    ? value
+    : fallback;
 }
 
 function normalizePositiveInteger(value: unknown, fallback: number): number {

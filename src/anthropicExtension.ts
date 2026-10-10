@@ -1,13 +1,15 @@
 import * as vscode from 'vscode';
 import { AnthropicModelProvider, getAnthropicProviderConfig } from './anthropicProvider';
 import { getClaudeCliStatus } from './claudeCli';
+import { ClaudeUsageStatusBar } from './claudeUsageStatusBar';
 
 const PROVIDER_ID = 'anthropic-for-copilot';
 const CLAUDE_CODE_INSTALL_URL = 'https://code.claude.com/docs/en/setup';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const output = vscode.window.createOutputChannel('Anthropic for Copilot', { log: true });
-  const provider = new AnthropicModelProvider(output);
+  const usageStatusBar = new ClaudeUsageStatusBar(context);
+  const provider = new AnthropicModelProvider(output, (usage) => usageStatusBar.record(usage));
   output.info('Anthropic for Copilot activated', {
     extensionVersion: context.extension.packageJSON.version,
     vscodeVersion: vscode.version,
@@ -17,10 +19,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(
     output,
     provider,
+    usageStatusBar,
     vscode.lm.registerLanguageModelChatProvider(PROVIDER_ID, provider),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration('anthropicForCopilot')) {
         provider.refresh();
+        usageStatusBar.refresh();
       }
     }),
     vscode.commands.registerCommand('anthropicForCopilot.openLogs', () => output.show(true)),
@@ -34,6 +38,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       provider.refresh();
       vscode.window.showInformationMessage('Anthropic model availability refreshed.');
     }),
+    vscode.commands.registerCommand('anthropicForCopilot.showUsage', () => usageStatusBar.showDetails()),
     vscode.commands.registerCommand('anthropicForCopilot.auth.signInWithClaudeCode', () => {
       createClaudeTerminal('Claude Code').show();
       vscode.window.showInformationMessage('Complete the official Claude Code sign-in flow in the terminal.');
@@ -42,6 +47,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       createClaudeTerminal('Claude Code Sign In', ['auth', 'login']).show();
     }),
     vscode.commands.registerCommand('anthropicForCopilot.auth.signOut', () => {
+      usageStatusBar.clear();
       createClaudeTerminal('Claude Code Sign Out', ['auth', 'logout']).show();
     }),
     vscode.commands.registerCommand('anthropicForCopilot.auth.showStatus', async () => {
@@ -62,6 +68,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         return;
       }
+      usageStatusBar.setAccount(status.account);
       const details = [
         status.authenticated ? 'Signed in' : 'Not signed in',
         status.version,
@@ -84,6 +91,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         { label: '$(account) Show Claude Code Sign-In Status', command: 'anthropicForCopilot.auth.showStatus' },
         { label: '$(browser) Sign in with Browser', command: 'anthropicForCopilot.auth.signInWithBrowser' },
         { label: '$(terminal) Sign in with Claude Code', command: 'anthropicForCopilot.auth.signInWithClaudeCode' },
+        { label: '$(pulse) Show Account Usage', command: 'anthropicForCopilot.showUsage' },
         { label: '$(refresh) Refresh Models', command: 'anthropicForCopilot.refreshModels' },
         { label: '$(gear) Open Settings', command: 'anthropicForCopilot.openSettings' },
         { label: '$(output) Open Logs', command: 'anthropicForCopilot.openLogs' },
@@ -94,6 +102,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     })
   );
+
+  void getClaudeCliStatus(getAnthropicProviderConfig().claudePath)
+    .then((status) => {
+      if (status.authenticated) {
+        usageStatusBar.setAccount(status.account);
+      } else {
+        usageStatusBar.clear();
+      }
+    })
+    .catch(() => undefined);
 }
 
 export function deactivate(): void {}

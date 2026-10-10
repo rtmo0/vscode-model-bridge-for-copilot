@@ -1,3 +1,5 @@
+export type ClaudeEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
 export interface ClaudeToolDefinition {
   name: string;
   description: string;
@@ -15,10 +17,32 @@ export interface ClaudeToolCall {
   arguments: Record<string, unknown>;
 }
 
+export interface ClaudeRateLimitWindow {
+  utilization: number;
+  resetsAt?: number;
+}
+
+export interface ClaudeUsageUpdate {
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheCreationInputTokens?: number;
+  cacheReadInputTokens?: number;
+  thinkingTokens?: number;
+  totalCostUsd?: number;
+  model?: string;
+  contextWindow?: number;
+  maxOutputTokens?: number;
+  fiveHour?: ClaudeRateLimitWindow;
+  sevenDay?: ClaudeRateLimitWindow;
+  isUsingOverage?: boolean;
+  overageStatus?: string;
+}
+
 export interface ClaudeStreamCallbacks {
   onText(text: string): void;
   onThinking?(text: string): void;
   onToolCall?(call: ClaudeToolCall): void;
+  onUsage?(usage: ClaudeUsageUpdate): void;
 }
 
 export const CLAUDE_MODELS = [
@@ -26,29 +50,29 @@ export const CLAUDE_MODELS = [
     id: 'default',
     name: 'Claude (Default)',
     description: 'Uses the model selected by Claude Code.',
-    maxInputTokens: 200_000,
-    maxOutputTokens: 64_000
+    maxInputTokens: 1_000_000,
+    maxOutputTokens: 128_000
   },
   {
     id: 'sonnet',
     name: 'Claude Sonnet',
     description: 'Balanced Claude model for coding and agentic work.',
-    maxInputTokens: 200_000,
-    maxOutputTokens: 64_000
+    maxInputTokens: 1_000_000,
+    maxOutputTokens: 128_000
   },
   {
     id: 'opus',
     name: 'Claude Opus',
     description: 'Most capable Claude model for complex work.',
-    maxInputTokens: 200_000,
-    maxOutputTokens: 64_000
+    maxInputTokens: 1_000_000,
+    maxOutputTokens: 128_000
   },
   {
     id: 'haiku',
     name: 'Claude Haiku',
     description: 'Fast Claude model for lightweight tasks.',
-    maxInputTokens: 200_000,
-    maxOutputTokens: 64_000
+    maxInputTokens: 1_000_000,
+    maxOutputTokens: 128_000
   }
 ] as const;
 
@@ -160,7 +184,19 @@ export class ClaudeStreamJsonParser {
       return;
     }
 
+    if (message.type === 'rate_limit_event') {
+      const usage = parseRateLimitUpdate(message);
+      if (usage) {
+        this.callbacks.onUsage?.(usage);
+      }
+      return;
+    }
+
     if (message.type === 'result') {
+      const usage = parseResultUsageUpdate(message);
+      if (usage) {
+        this.callbacks.onUsage?.(usage);
+      }
       if (message.is_error === true || (typeof message.subtype === 'string' && message.subtype !== 'success')) {
         this.resultError = typeof message.result === 'string' && message.result.trim()
           ? message.result.trim()
@@ -264,6 +300,67 @@ function parseToolCall(serialized: string, allowedTools: ReadonlySet<string>): C
   } catch {
     return undefined;
   }
+}
+
+function parseRateLimitUpdate(message: Record<string, unknown>): ClaudeUsageUpdate | undefined {
+  if (!isRecord(message.rate_limit_info)) {
+    return undefined;
+  }
+  const info = message.rate_limit_info;
+  const unifiedWindows = isRecord(info.unifiedWindows) ? info.unifiedWindows : undefined;
+  const fiveHour = parseRateLimitWindow(unifiedWindows?.five_hour);
+  const sevenDay = parseRateLimitWindow(unifiedWindows?.seven_day);
+  if (!fiveHour && !sevenDay && typeof info.isUsingOverage !== 'boolean' && typeof info.overageStatus !== 'string') {
+    return undefined;
+  }
+  return {
+    ...(fiveHour ? { fiveHour } : {}),
+    ...(sevenDay ? { sevenDay } : {}),
+    ...(typeof info.isUsingOverage === 'boolean' ? { isUsingOverage: info.isUsingOverage } : {}),
+    ...(typeof info.overageStatus === 'string' ? { overageStatus: info.overageStatus } : {})
+  };
+}
+
+function parseRateLimitWindow(value: unknown): ClaudeRateLimitWindow | undefined {
+  if (!isRecord(value) || typeof value.utilization !== 'number' || !Number.isFinite(value.utilization)) {
+    return undefined;
+  }
+  const resetsAt = typeof value.resetsAt === 'number' && Number.isFinite(value.resetsAt)
+    ? value.resetsAt
+    : undefined;
+  return {
+    utilization: Math.min(1, Math.max(0, value.utilization)),
+    ...(resetsAt !== undefined ? { resetsAt } : {})
+  };
+}
+
+function parseResultUsageUpdate(message: Record<string, unknown>): ClaudeUsageUpdate | undefined {
+  const usage = isRecord(message.usage) ? message.usage : undefined;
+  const modelUsage = isRecord(message.modelUsage)
+    ? Object.entries(message.modelUsage)
+      .filter((entry): entry is [string, Record<string, unknown>] => isRecord(entry[1]))
+      .sort((left, right) => (readFiniteNumber(right[1].costUSD) ?? 0) - (readFiniteNumber(left[1].costUSD) ?? 0))[0]
+    : undefined;
+  const modelDetails = modelUsage?.[1];
+  const update: ClaudeUsageUpdate = {
+    inputTokens: readFiniteNumber(usage?.input_tokens),
+    outputTokens: readFiniteNumber(usage?.output_tokens),
+    cacheCreationInputTokens: readFiniteNumber(usage?.cache_creation_input_tokens),
+    cacheReadInputTokens: readFiniteNumber(usage?.cache_read_input_tokens),
+    thinkingTokens: isRecord(usage?.output_tokens_details)
+      ? readFiniteNumber(usage.output_tokens_details.thinking_tokens)
+      : undefined,
+    totalCostUsd: readFiniteNumber(message.total_cost_usd),
+    model: modelUsage?.[0],
+    contextWindow: readFiniteNumber(modelDetails?.contextWindow),
+    maxOutputTokens: readFiniteNumber(modelDetails?.maxOutputTokens)
+  };
+  const populated = Object.values(update).some((value) => value !== undefined);
+  return populated ? update : undefined;
+}
+
+function readFiniteNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
 function readAssistantText(message: Record<string, unknown>): string {

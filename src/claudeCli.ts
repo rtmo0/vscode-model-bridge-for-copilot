@@ -6,6 +6,7 @@ import * as vscode from 'vscode';
 import {
   ClaudeStreamJsonParser,
   ClaudeToolProtocolParser,
+  type ClaudeEffort,
   type ClaudeStreamCallbacks
 } from './claudeProtocol';
 
@@ -21,6 +22,8 @@ export interface ClaudeCliStatus {
 export interface ClaudeCliRequest {
   executable: string;
   model: string;
+  effort: ClaudeEffort;
+  contextSize: number;
   prompt: string;
   systemPrompt: string;
   markerNonce: string;
@@ -95,6 +98,8 @@ async function runClaudeProcess(request: ClaudeCliRequest, systemPromptPath: str
     '--output-format', 'stream-json',
     '--verbose',
     '--include-partial-messages',
+    '--effort', request.effort,
+    '--autocompact', formatContextSizeArgument(request.contextSize),
     '--append-system-prompt-file', systemPromptPath
   ];
   if (request.model !== 'default') {
@@ -221,6 +226,12 @@ async function runCommand(executable: string, args: string[]): Promise<CommandRe
       }
     });
   });
+}
+
+function formatContextSizeArgument(contextSize: number): string {
+  return contextSize >= 1_000_000 && contextSize % 1_000_000 === 0
+    ? `${contextSize / 1_000_000}m`
+    : `${Math.round(contextSize / 1_000)}k`;
 }
 
 export function getClaudeSignInEnvironment(): NodeJS.ProcessEnv {

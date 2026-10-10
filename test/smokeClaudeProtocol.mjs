@@ -53,20 +53,40 @@ try {
 
   const streamedText = [];
   const thinking = [];
+  const usageUpdates = [];
   const streamToolParser = new protocol.ClaudeToolProtocolParser(nonce, new Set(), {
     onText: (value) => streamedText.push(value)
   });
   const streamParser = new protocol.ClaudeStreamJsonParser(streamToolParser, {
     onText: (value) => streamedText.push(value),
-    onThinking: (value) => thinking.push(value)
+    onThinking: (value) => thinking.push(value),
+    onUsage: (value) => usageUpdates.push(value)
   });
   streamParser.push('{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"Plan"}}}\n');
   streamParser.push('{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Hello "}}}\n');
   streamParser.push('{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Claude"}}}\n');
-  streamParser.push('{"type":"result","subtype":"success","is_error":false,"result":"Hello Claude"}\n');
+  streamParser.push('{"type":"rate_limit_event","rate_limit_info":{"unifiedWindows":{"five_hour":{"utilization":0.25,"resetsAt":1791667200},"seven_day":{"utilization":0.4,"resetsAt":1792123200}},"isUsingOverage":false,"overageStatus":"rejected"}}\n');
+  streamParser.push('{"type":"result","subtype":"success","is_error":false,"result":"Hello Claude","total_cost_usd":0.0123,"usage":{"input_tokens":2,"output_tokens":9,"cache_creation_input_tokens":100,"cache_read_input_tokens":200,"output_tokens_details":{"thinking_tokens":4}},"modelUsage":{"claude-haiku-5-5":{"costUSD":0.0001,"contextWindow":1000000,"maxOutputTokens":128000},"claude-sonnet-5-5":{"costUSD":0.0122,"contextWindow":1000000,"maxOutputTokens":128000}}}\n');
   streamParser.finish();
   assert.equal(streamedText.join(''), 'Hello Claude');
   assert.equal(thinking.join(''), 'Plan');
+  assert.deepEqual(usageUpdates[0], {
+    fiveHour: { utilization: 0.25, resetsAt: 1791667200 },
+    sevenDay: { utilization: 0.4, resetsAt: 1792123200 },
+    isUsingOverage: false,
+    overageStatus: 'rejected'
+  });
+  assert.deepEqual(usageUpdates[1], {
+    inputTokens: 2,
+    outputTokens: 9,
+    cacheCreationInputTokens: 100,
+    cacheReadInputTokens: 200,
+    thinkingTokens: 4,
+    totalCostUsd: 0.0123,
+    model: 'claude-sonnet-5-5',
+    contextWindow: 1000000,
+    maxOutputTokens: 128000
+  });
 
   const errorParser = new protocol.ClaudeStreamJsonParser(
     new protocol.ClaudeToolProtocolParser(nonce, new Set(), { onText() {} }),
