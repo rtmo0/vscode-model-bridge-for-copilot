@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import * as vscode from 'vscode';
 import { getClaudeCliStatus, streamClaudeResponse } from './claudeCli';
+import { ClaudeSessionStore } from './claudeSessionStore';
 import {
   buildClaudePrompt,
   buildClaudeSystemPrompt,
@@ -23,6 +24,9 @@ export interface AnthropicProviderConfig {
   defaultEffort: ClaudeEffort;
   defaultContextSize: number;
   maxOutputTokens: number;
+  requestTimeoutMs: number;
+  enabledModels: string[];
+  sessionContinuation: boolean;
 }
 
 type RuntimeResponseOptions = vscode.ProvideLanguageModelChatResponseOptions & {
@@ -67,6 +71,7 @@ const USAGE_DATA_PART_MIME = 'usage';
 
 export class AnthropicModelProvider implements vscode.LanguageModelChatProvider, vscode.Disposable {
   private readonly modelsChanged = new vscode.EventEmitter<void>();
+  private readonly sessionStore = new ClaudeSessionStore();
   readonly onDidChangeLanguageModelChatInformation = this.modelsChanged.event;
 
   constructor(
@@ -75,10 +80,12 @@ export class AnthropicModelProvider implements vscode.LanguageModelChatProvider,
   ) {}
 
   dispose(): void {
+    this.sessionStore.clear();
     this.modelsChanged.dispose();
   }
 
   refresh(): void {
+    this.sessionStore.clear();
     this.modelsChanged.fire();
   }
 
@@ -111,6 +118,22 @@ export class AnthropicModelProvider implements vscode.LanguageModelChatProvider,
       return [];
     }
 
+    if (!status.compatible) {
+      if (!options.silent) {
+        const action = await vscode.window.showWarningMessage(
+          status.error ?? 'Claude Code must be updated before it can be used by this extension.',
+          'Update Claude Code',
+          'Open Settings'
+        );
+        if (action === 'Update Claude Code') {
+          await vscode.commands.executeCommand('anthropicForCopilot.updateClaudeCode');
+        } else if (action === 'Open Settings') {
+          await vscode.commands.executeCommand('anthropicForCopilot.openSettings');
+        }
+      }
+      return [];
+    }
+
     if (!status.authenticated) {
       if (!options.silent) {
         const action = await vscode.window.showWarningMessage(
@@ -127,7 +150,9 @@ export class AnthropicModelProvider implements vscode.LanguageModelChatProvider,
       return [];
     }
 
-    return CLAUDE_MODELS.map((model): ModelPickerChatInformation => ({
+    return CLAUDE_MODELS
+      .filter((model) => config.enabledModels.includes(model.id))
+      .map((model): ModelPickerChatInformation => ({
       id: toProviderModelId(model.id),
       name: model.name,
       family: 'claude',
@@ -159,7 +184,23 @@ export class AnthropicModelProvider implements vscode.LanguageModelChatProvider,
     const tools = normalizeTools(options.tools ?? []);
     const markerNonce = randomBytes(12).toString('hex');
     const promptMessages = messages.map(convertMessage);
+    const toolRequired = options.toolMode === vscode.LanguageModelChatToolMode.Required && tools.length > 0;
+    const sessionEnvelope = {
+      model: selectedModel,
+      effort,
+      contextSize,
+      instructions: config.instructions,
+      toolRequired,
+      tools
+    };
+    const continuation = config.sessionContinuation
+      ? this.sessionStore.resolve(promptMessages, sessionEnvelope)
+      : undefined;
+    const requestedSessionId = continuation?.sessionId ?? (config.sessionContinuation ? randomUUID() : undefined);
+    const messagesToSend = continuation?.appendedMessages ?? promptMessages;
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const outputSegments: Array<{ kind: 'text' | 'tool'; value: string }> = [];
+    let activeSessionId = requestedSessionId;
     let textCharacters = 0;
     let thinkingCharacters = 0;
     let toolCallCount = 0;
@@ -170,7 +211,10 @@ export class AnthropicModelProvider implements vscode.LanguageModelChatProvider,
       effort,
       contextSize,
       messageCount: messages.length,
+      incrementalMessageCount: messagesToSend.length,
+      sessionContinuation: continuation ? 'resumed' : config.sessionContinuation ? 'new' : 'disabled',
       toolCount: tools.length,
+      toolRequired,
       hasWorkspace: Boolean(workspaceFolder)
     });
 
@@ -179,18 +223,28 @@ export class AnthropicModelProvider implements vscode.LanguageModelChatProvider,
       model: selectedModel,
       effort,
       contextSize,
-      prompt: buildClaudePrompt(promptMessages),
-      systemPrompt: buildClaudeSystemPrompt(config.instructions, tools, markerNonce),
+      prompt: buildClaudePrompt(messagesToSend),
+      systemPrompt: buildClaudeSystemPrompt(config.instructions, tools, markerNonce, toolRequired),
       markerNonce,
       allowedTools: new Set(tools.map((tool) => tool.name)),
       cwd: workspaceFolder,
       token,
+      timeoutMs: config.requestTimeoutMs,
+      persistSession: config.sessionContinuation,
+      sessionId: requestedSessionId,
+      resumeSession: continuation !== undefined,
       callbacks: {
         onText: (text) => {
           if (!text) {
             return;
           }
           textCharacters += text.length;
+          const lastSegment = outputSegments.at(-1);
+          if (lastSegment?.kind === 'text') {
+            lastSegment.value += text;
+          } else {
+            outputSegments.push({ kind: 'text', value: text });
+          }
           progress.report(new vscode.LanguageModelTextPart(text));
         },
         onThinking: (thinking) => {
@@ -203,18 +257,29 @@ export class AnthropicModelProvider implements vscode.LanguageModelChatProvider,
         },
         onToolCall: (call) => {
           toolCallCount += 1;
-          progress.report(new vscode.LanguageModelToolCallPart(
-            call.id ?? randomUUID(),
-            call.name,
-            call.arguments
-          ));
+          const callId = call.id ?? randomUUID();
+          outputSegments.push({
+            kind: 'tool',
+            value: `[Tool call ${callId}: ${call.name}]\n${safeJson(call.arguments)}`
+          });
+          progress.report(new vscode.LanguageModelToolCallPart(callId, call.name, call.arguments));
         },
         onUsage: (update) => {
           usage = mergeUsageUpdates(usage, update);
           this.usageSink?.(update);
+        },
+        onSessionId: (sessionId) => {
+          activeSessionId = sessionId;
         }
       }
     });
+
+    if (config.sessionContinuation && activeSessionId && outputSegments.length > 0) {
+      this.sessionStore.record(activeSessionId, [
+        ...promptMessages,
+        { role: 'assistant', content: outputSegments.map((segment) => segment.value).join('\n') }
+      ], sessionEnvelope);
+    }
 
     const usagePart = createUsageDataPart(usage);
     if (usagePart) {
@@ -250,7 +315,10 @@ export function getAnthropicProviderConfig(): AnthropicProviderConfig {
     ),
     defaultEffort: normalizeEffort(config.get('defaultEffort', 'high'), 'high'),
     defaultContextSize: normalizeContextSize(config.get('defaultContextSize', 1_000_000), 1_000_000),
-    maxOutputTokens: normalizePositiveInteger(config.get('maxOutputTokens', 128_000), 128_000)
+    maxOutputTokens: normalizePositiveInteger(config.get('maxOutputTokens', 128_000), 128_000),
+    requestTimeoutMs: normalizeRequestTimeout(config.get('requestTimeoutSeconds', 600)) * 1_000,
+    enabledModels: normalizeEnabledModels(config.get('enabledModels', CLAUDE_MODELS.map((model) => model.id))),
+    sessionContinuation: config.get('sessionContinuation', false)
   };
 }
 
@@ -432,4 +500,22 @@ function normalizePositiveInteger(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0
     ? Math.floor(value)
     : fallback;
+}
+
+function normalizeRequestTimeout(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return 600;
+  }
+  return Math.min(3_600, Math.max(30, Math.floor(value)));
+}
+
+function normalizeEnabledModels(value: unknown): string[] {
+  const knownModels = new Set(CLAUDE_MODELS.map((model) => model.id));
+  if (!Array.isArray(value)) {
+    return [...knownModels];
+  }
+  const models = [...new Set(value.filter((entry): entry is string => (
+    typeof entry === 'string' && knownModels.has(entry as typeof CLAUDE_MODELS[number]['id'])
+  )))];
+  return models.length > 0 ? models : ['default'];
 }

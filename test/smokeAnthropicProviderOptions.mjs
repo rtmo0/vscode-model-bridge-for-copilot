@@ -30,6 +30,7 @@ try {
             export class LanguageModelThinkingPart {}
             export class LanguageModelDataPart { static json(value, mimeType) { return { value, mimeType }; } }
             export const LanguageModelChatMessageRole = { User: 1, Assistant: 2 };
+            export const LanguageModelChatToolMode = { Auto: 1, Required: 2 };
             export const workspace = { getConfiguration() { return { get(_key, fallback) { return fallback; } }; } };
             export const commands = { async executeCommand() {} };
             export const window = {};

@@ -49,7 +49,7 @@
     "check": "tsc -p ./ --noEmit",
     "compile": "npm run check && node esbuild.mjs",
     "build": "node esbuild.mjs",
-    "test:smoke": "node test/smokeClaudeProtocol.mjs && node test/smokeClaudeCli.mjs && node test/smokeAnthropicProviderOptions.mjs && node test/smokeClaudeUsageStatus.mjs",
+    "test:smoke": "node test/smokeClaudeProtocol.mjs && node test/smokeClaudeCli.mjs && node test/smokeClaudeSessionStore.mjs && node test/smokeAnthropicProviderOptions.mjs && node test/smokeClaudeUsageStatus.mjs",
     "package:vsix": "vsce package --no-dependencies",
     "package": "vsce package --no-dependencies",
     "watch": "tsc -watch -p ./",
@@ -120,6 +120,21 @@
         "command": "anthropicForCopilot.openLogs",
         "title": "Open Logs",
         "category": "Anthropic for Copilot"
+      },
+      {
+        "command": "anthropicForCopilot.doctor",
+        "title": "Run Doctor",
+        "category": "Anthropic for Copilot"
+      },
+      {
+        "command": "anthropicForCopilot.quickConfigure",
+        "title": "Quick Configure Models",
+        "category": "Anthropic for Copilot"
+      },
+      {
+        "command": "anthropicForCopilot.updateClaudeCode",
+        "title": "Update Claude Code",
+        "category": "Anthropic for Copilot"
       }
     ],
     "configuration": {
@@ -186,6 +201,42 @@
           "type": "boolean",
           "default": true,
           "description": "Show Claude 5-hour and 7-day account utilization in the status bar after usage data is received."
+        },
+        "anthropicForCopilot.enabledModels": {
+          "type": "array",
+          "default": [
+            "default",
+            "best",
+            "fable",
+            "sonnet",
+            "opus",
+            "haiku"
+          ],
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "default",
+              "best",
+              "fable",
+              "sonnet",
+              "opus",
+              "haiku"
+            ]
+          },
+          "description": "Claude model aliases shown in the VS Code model picker."
+        },
+        "anthropicForCopilot.requestTimeoutSeconds": {
+          "type": "integer",
+          "default": 600,
+          "minimum": 30,
+          "maximum": 3600,
+          "description": "Maximum time for one Claude Code request before the process is terminated."
+        },
+        "anthropicForCopilot.sessionContinuation": {
+          "type": "boolean",
+          "default": false,
+          "description": "Reuse compatible Claude Code sessions for incremental follow-ups. This improves prompt caching, but Claude Code persists those conversations in its local session history."
         }
       }
     }

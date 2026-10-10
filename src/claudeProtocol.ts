@@ -43,6 +43,7 @@ export interface ClaudeStreamCallbacks {
   onThinking?(text: string): void;
   onToolCall?(call: ClaudeToolCall): void;
   onUsage?(usage: ClaudeUsageUpdate): void;
+  onSessionId?(sessionId: string): void;
 }
 
 export const CLAUDE_MODELS = [
@@ -50,6 +51,20 @@ export const CLAUDE_MODELS = [
     id: 'default',
     name: 'Claude (Default)',
     description: 'Uses the model selected by Claude Code.',
+    maxInputTokens: 1_000_000,
+    maxOutputTokens: 128_000
+  },
+  {
+    id: 'best',
+    name: 'Claude Best',
+    description: 'Uses Fable when available, otherwise the latest Opus model.',
+    maxInputTokens: 1_000_000,
+    maxOutputTokens: 128_000
+  },
+  {
+    id: 'fable',
+    name: 'Claude Fable',
+    description: 'Anthropic’s most capable model for long-running, complex tasks. May require usage credits.',
     maxInputTokens: 1_000_000,
     maxOutputTokens: 128_000
   },
@@ -98,7 +113,8 @@ export function buildClaudePrompt(messages: readonly ClaudePromptMessage[]): str
 export function buildClaudeSystemPrompt(
   instructions: string,
   tools: readonly ClaudeToolDefinition[],
-  markerNonce: string
+  markerNonce: string,
+  toolRequired = false
 ): string {
   if (tools.length === 0) {
     return instructions;
@@ -111,8 +127,11 @@ export function buildClaudeSystemPrompt(
     description: tool.description,
     inputSchema: tool.inputSchema
   }));
+  const toolModeInstruction = toolRequired
+    ? 'You must call at least one catalog tool before giving a final answer.'
+    : 'Call a tool only when it improves the answer.';
 
-  return `${instructions}\n\nVS Code controls all tools for this conversation. Claude Code's own tools are disabled.\nWhen a tool is needed, output exactly one tool request using this format and no Markdown fences:\n${startMarker}{"name":"tool_name","arguments":{}}${endMarker}\nUse only a tool from the catalog below. Do not invent tool names. Stop generating after the closing marker so VS Code can execute the tool.\n\nTool catalog:\n${JSON.stringify(catalog)}`;
+  return `${instructions}\n\nVS Code controls all tools for this conversation. Claude Code's own tools are disabled. ${toolModeInstruction}\nFor each tool request, output this exact format with no Markdown fences:\n${startMarker}{"name":"tool_name","arguments":{}}${endMarker}\nYou may emit multiple tool requests when they are independent. Use only tools from the catalog, never invent names, and stop after the last closing marker so VS Code can execute them.\n\nTool catalog:\n${JSON.stringify(catalog)}`;
 }
 
 export function toolStartMarker(nonce: string): string {
@@ -168,6 +187,10 @@ export class ClaudeStreamJsonParser {
     }
     if (!isRecord(message)) {
       return;
+    }
+
+    if (typeof message.session_id === 'string' && message.session_id.trim()) {
+      this.callbacks.onSessionId?.(message.session_id.trim());
     }
 
     if (message.type === 'stream_event' && isRecord(message.event)) {

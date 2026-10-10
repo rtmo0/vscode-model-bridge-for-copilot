@@ -13,11 +13,15 @@ import {
 export interface ClaudeCliStatus {
   installed: boolean;
   authenticated: boolean;
+  compatible: boolean;
   version?: string;
   authMethod?: string;
   account?: string;
+  subscriptionType?: string;
   error?: string;
 }
+
+export const MINIMUM_CLAUDE_CODE_VERSION = '2.1.259';
 
 export interface ClaudeCliRequest {
   executable: string;
@@ -31,6 +35,10 @@ export interface ClaudeCliRequest {
   cwd?: string;
   callbacks: ClaudeStreamCallbacks;
   token: vscode.CancellationToken;
+  timeoutMs: number;
+  persistSession?: boolean;
+  sessionId?: string;
+  resumeSession?: boolean;
 }
 
 const MAX_ERROR_LENGTH = 4_096;
@@ -38,22 +46,24 @@ const MAX_ERROR_LENGTH = 4_096;
 export async function getClaudeCliStatus(executable: string): Promise<ClaudeCliStatus> {
   const versionResult = await runCommand(executable, ['--version']);
   if (versionResult.kind === 'missing') {
-    return { installed: false, authenticated: false, error: `Claude Code was not found at "${executable}".` };
+    return { installed: false, authenticated: false, compatible: false, error: `Claude Code was not found at "${executable}".` };
   }
   if (versionResult.kind === 'error') {
-    return { installed: false, authenticated: false, error: versionResult.message };
-  }
-
-  const authResult = await runCommand(executable, ['auth', 'status']);
-  if (authResult.kind === 'missing') {
-    return { installed: false, authenticated: false, error: `Claude Code was not found at "${executable}".` };
+    return { installed: false, authenticated: false, compatible: false, error: versionResult.message };
   }
 
   const version = firstLine(versionResult.stdout);
+  const compatible = isClaudeVersionAtLeast(version, MINIMUM_CLAUDE_CODE_VERSION);
+  const authResult = await runCommand(executable, ['auth', 'status']);
+  if (authResult.kind === 'missing') {
+    return { installed: false, authenticated: false, compatible: false, error: `Claude Code was not found at "${executable}".` };
+  }
+
   if (authResult.kind === 'error') {
     return {
       installed: true,
       authenticated: false,
+      compatible,
       version,
       error: authResult.message
     };
@@ -61,15 +71,22 @@ export async function getClaudeCliStatus(executable: string): Promise<ClaudeCliS
 
   const payload = parseJsonRecord(authResult.stdout);
   const authMethod = typeof payload?.authMethod === 'string' ? payload.authMethod : undefined;
-  const account = firstString(payload?.email, payload?.accountName, payload?.subscriptionType);
+  const account = firstString(payload?.email, payload?.accountName);
+  const subscriptionType = firstString(payload?.subscriptionType);
   const usesApiKey = authMethod === 'api_key' || authMethod === 'api_key_helper';
   return {
     installed: true,
     authenticated: authResult.exitCode === 0 && authMethod !== 'none' && !usesApiKey,
+    compatible,
     version,
     authMethod,
     account,
-    ...(usesApiKey ? { error: 'Claude Code is using API-key authentication. Sign in with a Claude account instead.' } : {})
+    subscriptionType,
+    ...(!compatible
+      ? { error: `Claude Code ${MINIMUM_CLAUDE_CODE_VERSION} or newer is required. Run “claude update”.` }
+      : usesApiKey
+        ? { error: 'Claude Code is using API-key authentication. Sign in with a Claude account instead.' }
+        : {})
   };
 }
 
@@ -93,8 +110,8 @@ async function runClaudeProcess(request: ClaudeCliRequest, systemPromptPath: str
     '-p',
     '--safe-mode',
     '--tools', '',
+    '--permission-prompts', 'none',
     '--max-turns', '1',
-    '--no-session-persistence',
     '--output-format', 'stream-json',
     '--verbose',
     '--include-partial-messages',
@@ -102,6 +119,12 @@ async function runClaudeProcess(request: ClaudeCliRequest, systemPromptPath: str
     '--autocompact', formatContextSizeArgument(request.contextSize),
     '--append-system-prompt-file', systemPromptPath
   ];
+  if (!request.persistSession) {
+    args.push('--no-session-persistence');
+  } else if (request.sessionId) {
+    args.push(request.resumeSession ? '--resume' : '--session-id', request.sessionId);
+    args.push('--system-prompt-snapshot', 'off');
+  }
   if (request.model !== 'default') {
     args.push('--model', request.model);
   }
@@ -120,20 +143,52 @@ async function runClaudeProcess(request: ClaudeCliRequest, systemPromptPath: str
   const streamParser = new ClaudeStreamJsonParser(toolParser, request.callbacks);
   let stderr = '';
   let cancelled = request.token.isCancellationRequested;
+  let timedOut = false;
+  let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
 
+  const terminate = () => {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      return;
+    }
+    child.kill();
+    forceKillTimer ??= setTimeout(() => {
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill('SIGKILL');
+      }
+    }, 2_000);
+    forceKillTimer.unref();
+  };
   const cancellation = request.token.onCancellationRequested(() => {
     cancelled = true;
-    child.kill();
+    terminate();
   });
+  if (cancelled) {
+    terminate();
+  }
+  const requestTimeout = request.timeoutMs > 0
+    ? setTimeout(() => {
+        timedOut = true;
+        terminate();
+      }, request.timeoutMs)
+    : undefined;
+  requestTimeout?.unref();
 
   try {
     await new Promise<void>((resolve, reject) => {
-      child.once('error', (error: NodeJS.ErrnoException) => {
-        if (error.code === 'ENOENT') {
-          reject(new Error(`Claude Code was not found at "${request.executable}". Install it or update the Claude Code path in settings.`));
+      let settled = false;
+      const complete = (error?: unknown) => {
+        if (settled) {
           return;
         }
-        reject(error);
+        settled = true;
+        error === undefined ? resolve() : reject(error);
+      };
+      child.once('error', (error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') {
+          complete(new Error(`Claude Code was not found at "${request.executable}". Install it or update the Claude Code path in settings.`));
+          return;
+        }
+        complete(error);
       });
       child.stdout.setEncoding('utf8');
       child.stdout.on('data', (chunk: string) => streamParser.push(chunk));
@@ -145,31 +200,37 @@ async function runClaudeProcess(request: ClaudeCliRequest, systemPromptPath: str
       });
       child.once('close', (code, signal) => {
         if (cancelled) {
-          reject(new vscode.CancellationError());
+          complete(new vscode.CancellationError());
+          return;
+        }
+        if (timedOut) {
+          complete(new Error(`Claude Code did not finish within ${formatDuration(request.timeoutMs)}. Increase the request timeout in Anthropic for Copilot settings and retry.`));
           return;
         }
         try {
           streamParser.finish();
         } catch (error) {
-          reject(error);
+          complete(normalizeClaudeError(error));
           return;
         }
         if (code !== 0) {
           const detail = sanitizeCliError(stderr);
-          reject(new Error(detail || `Claude Code exited with code ${code ?? 'unknown'}${signal ? ` (${signal})` : ''}.`));
+          complete(new Error(detail || `Claude Code exited with code ${code ?? 'unknown'}${signal ? ` (${signal})` : ''}.`));
           return;
         }
-        resolve();
+        complete();
       });
       child.stdin.once('error', (error: NodeJS.ErrnoException) => {
         if (error.code !== 'EPIPE') {
-          reject(error);
+          complete(error);
         }
       });
       child.stdin.end(request.prompt, 'utf8');
     });
   } finally {
     cancellation.dispose();
+    if (requestTimeout) clearTimeout(requestTimeout);
+    if (forceKillTimer) clearTimeout(forceKillTimer);
   }
 }
 
@@ -232,6 +293,44 @@ function formatContextSizeArgument(contextSize: number): string {
   return contextSize >= 1_000_000 && contextSize % 1_000_000 === 0
     ? `${contextSize / 1_000_000}m`
     : `${Math.round(contextSize / 1_000)}k`;
+}
+
+export function isClaudeVersionAtLeast(version: string | undefined, minimum: string): boolean {
+  const currentParts = version?.match(/\d+\.\d+\.\d+/)?.[0].split('.').map(Number);
+  const minimumParts = minimum.split('.').map(Number);
+  if (!currentParts || currentParts.length !== 3 || minimumParts.some((part) => !Number.isFinite(part))) {
+    return false;
+  }
+  for (let index = 0; index < 3; index += 1) {
+    if (currentParts[index] !== minimumParts[index]) {
+      return currentParts[index] > minimumParts[index];
+    }
+  }
+  return true;
+}
+
+function formatDuration(milliseconds: number): string {
+  if (milliseconds % 60_000 === 0) {
+    return `${milliseconds / 60_000} minute${milliseconds === 60_000 ? '' : 's'}`;
+  }
+  return `${Math.ceil(milliseconds / 1_000)} seconds`;
+}
+
+function normalizeClaudeError(error: unknown): Error {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/not logged in|please run \/login/i.test(message)) {
+    return new Error('Claude Code is not signed in. Run “Anthropic for Copilot: Sign in with Browser”.');
+  }
+  if (/rate limit|usage limit|limit reached/i.test(message)) {
+    return new Error('Claude account usage limit reached. Check the Claude usage status bar for reset times.');
+  }
+  if (/model.+(?:not available|not found|unsupported)|does not support this model/i.test(message)) {
+    return new Error('The selected Claude model is unavailable for this account. Choose another model or update Claude Code.');
+  }
+  if (/prompt.+too long|context.+(?:limit|length)|maximum context/i.test(message)) {
+    return new Error('The conversation exceeds the selected Claude context size. Choose a larger context or start a new chat.');
+  }
+  return error instanceof Error ? error : new Error(message);
 }
 
 export function getClaudeSignInEnvironment(): NodeJS.ProcessEnv {

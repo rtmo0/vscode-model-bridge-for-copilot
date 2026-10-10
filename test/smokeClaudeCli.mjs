@@ -29,6 +29,9 @@ if (args[0] === 'auth' && args[1] === 'status') {
 }
 let prompt = '';
 for await (const chunk of process.stdin) prompt += chunk;
+if (process.env.FAKE_CLAUDE_DELAY) {
+  await new Promise(resolve => setTimeout(resolve, Number(process.env.FAKE_CLAUDE_DELAY)));
+}
 const flagIndex = args.indexOf('--append-system-prompt-file');
 const systemPromptPath = args[flagIndex + 1];
 writeFileSync(process.env.FAKE_CLAUDE_RECORD, JSON.stringify({
@@ -70,6 +73,7 @@ console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false
   const status = await cli.getClaudeCliStatus(fakeCliPath);
   assert.equal(status.installed, true);
   assert.equal(status.authenticated, true);
+  assert.equal(status.compatible, true);
   assert.equal(status.authMethod, 'claude.ai');
   assert.equal(status.account, 'signed-in@example.test');
 
@@ -87,7 +91,8 @@ console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false
     token: {
       isCancellationRequested: false,
       onCancellationRequested: () => ({ dispose() {} })
-    }
+    },
+    timeoutMs: 5000
   });
   assert.equal(output.join(''), 'Hello from Claude');
 
@@ -98,11 +103,54 @@ console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false
   assert(!record.args.includes('--bare'));
   assert(record.args.includes('--no-session-persistence'));
   assert(record.args.includes('--include-partial-messages'));
+  assert.deepEqual(record.args.slice(record.args.indexOf('--permission-prompts'), record.args.indexOf('--permission-prompts') + 2), ['--permission-prompts', 'none']);
   assert.deepEqual(record.args.slice(record.args.indexOf('--tools'), record.args.indexOf('--tools') + 2), ['--tools', '']);
   assert.deepEqual(record.args.slice(record.args.indexOf('--model'), record.args.indexOf('--model') + 2), ['--model', 'sonnet']);
   assert.deepEqual(record.args.slice(record.args.indexOf('--effort'), record.args.indexOf('--effort') + 2), ['--effort', 'xhigh']);
   assert.deepEqual(record.args.slice(record.args.indexOf('--autocompact'), record.args.indexOf('--autocompact') + 2), ['--autocompact', '500k']);
   await assert.rejects(access(record.systemPromptPath, constants.F_OK));
+  assert.equal(cli.isClaudeVersionAtLeast('2.1.296 (Claude Code)', '2.1.259'), true);
+  assert.equal(cli.isClaudeVersionAtLeast('2.1.200', '2.1.259'), false);
+
+  await cli.streamClaudeResponse({
+    executable: fakeCliPath,
+    model: 'default',
+    effort: 'high',
+    contextSize: 1000000,
+    prompt: 'New session',
+    systemPrompt: 'System instructions',
+    markerNonce: 'nonce',
+    allowedTools: new Set(),
+    callbacks: { onText() {} },
+    token: { isCancellationRequested: false, onCancellationRequested: () => ({ dispose() {} }) },
+    timeoutMs: 5000,
+    persistSession: true,
+    sessionId: '550e8400-e29b-41d4-a716-446655440000'
+  });
+  const sessionRecord = JSON.parse(await readFile(recordPath, 'utf8'));
+  assert(!sessionRecord.args.includes('--no-session-persistence'));
+  assert.deepEqual(sessionRecord.args.slice(sessionRecord.args.indexOf('--session-id'), sessionRecord.args.indexOf('--session-id') + 2), [
+    '--session-id', '550e8400-e29b-41d4-a716-446655440000'
+  ]);
+  assert.deepEqual(sessionRecord.args.slice(sessionRecord.args.indexOf('--system-prompt-snapshot'), sessionRecord.args.indexOf('--system-prompt-snapshot') + 2), [
+    '--system-prompt-snapshot', 'off'
+  ]);
+
+  process.env.FAKE_CLAUDE_DELAY = '1000';
+  await assert.rejects(cli.streamClaudeResponse({
+    executable: fakeCliPath,
+    model: 'default',
+    effort: 'high',
+    contextSize: 100000,
+    prompt: 'Timeout',
+    systemPrompt: 'System instructions',
+    markerNonce: 'nonce',
+    allowedTools: new Set(),
+    callbacks: { onText() {} },
+    token: { isCancellationRequested: false, onCancellationRequested: () => ({ dispose() {} }) },
+    timeoutMs: 30
+  }), /did not finish within 1 second/);
+  delete process.env.FAKE_CLAUDE_DELAY;
 
   console.log('Claude CLI smoke tests passed.');
 } finally {
@@ -110,5 +158,6 @@ console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false
   delete process.env.ANTHROPIC_AUTH_TOKEN;
   delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
   delete process.env.FAKE_CLAUDE_RECORD;
+  delete process.env.FAKE_CLAUDE_DELAY;
   await rm(directory, { recursive: true, force: true });
 }

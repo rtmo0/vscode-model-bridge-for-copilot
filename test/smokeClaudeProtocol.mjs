@@ -32,9 +32,13 @@ try {
 
   const nonce = 'testnonce';
   const tools = [{ name: 'lookup', description: 'Look something up', inputSchema: { type: 'object' } }];
-  const systemPrompt = protocol.buildClaudeSystemPrompt('Be helpful.', tools, nonce);
+  const systemPrompt = protocol.buildClaudeSystemPrompt('Be helpful.', tools, nonce, true);
   assert.match(systemPrompt, /Claude Code's own tools are disabled/);
+  assert.match(systemPrompt, /must call at least one catalog tool/);
+  assert.match(systemPrompt, /multiple tool requests/);
   assert.match(systemPrompt, /"name":"lookup"/);
+  assert(protocol.CLAUDE_MODELS.some((model) => model.id === 'best'));
+  assert(protocol.CLAUDE_MODELS.some((model) => model.id === 'fable'));
 
   const text = [];
   const calls = [];
@@ -54,14 +58,17 @@ try {
   const streamedText = [];
   const thinking = [];
   const usageUpdates = [];
+  const sessionIds = [];
   const streamToolParser = new protocol.ClaudeToolProtocolParser(nonce, new Set(), {
     onText: (value) => streamedText.push(value)
   });
   const streamParser = new protocol.ClaudeStreamJsonParser(streamToolParser, {
     onText: (value) => streamedText.push(value),
     onThinking: (value) => thinking.push(value),
-    onUsage: (value) => usageUpdates.push(value)
+    onUsage: (value) => usageUpdates.push(value),
+    onSessionId: (value) => sessionIds.push(value)
   });
+  streamParser.push('{"type":"system","subtype":"init","session_id":"session-test"}\n');
   streamParser.push('{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"Plan"}}}\n');
   streamParser.push('{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Hello "}}}\n');
   streamParser.push('{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Claude"}}}\n');
@@ -70,6 +77,7 @@ try {
   streamParser.finish();
   assert.equal(streamedText.join(''), 'Hello Claude');
   assert.equal(thinking.join(''), 'Plan');
+  assert.deepEqual(sessionIds, ['session-test']);
   assert.deepEqual(usageUpdates[0], {
     fiveHour: { utilization: 0.25, resetsAt: 1791667200 },
     sevenDay: { utilization: 0.4, resetsAt: 1792123200 },
