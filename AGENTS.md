@@ -23,4 +23,5 @@
 - Provider requests must keep Claude Code built-in tools disabled. VS Code owns tool execution and confirmation.
 - Do not log prompts, responses, thinking, tool arguments, or tool results.
 - Temporary prompt files must be permission-restricted and removed after every request, including failures and cancellation.
+- Use Claude Code `--safe-mode`, not `--bare`: bare mode cannot access a saved claude.ai sign-in in current Claude Code releases.
 - Keep the Marketplace technical name `antropic-for-copilot` for repository compatibility, while user-facing branding uses the correct `Anthropic` spelling.

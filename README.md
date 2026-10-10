@@ -45,7 +45,7 @@ Use **Anthropic for Copilot: Show Sign-In Status** to run `claude auth status`, 
 3. Choose **Claude** and then Default, Sonnet, Opus, or Haiku.
 4. Use Chat or Agent mode normally.
 
-Each request runs Claude Code in non-interactive print mode with streamed JSON output, session persistence disabled, and Claude Code's built-in tools disabled. Selected VS Code tools are described explicitly to the model. This separation prevents the hidden CLI process from editing files or executing commands outside VS Code's normal tool confirmation flow.
+Each request runs Claude Code in non-interactive print mode with streamed JSON output, session persistence disabled, and Claude Code's built-in tools disabled. Claude Code runs in safe mode so project/user customizations cannot alter provider requests while the normal saved Claude sign-in remains available. Selected VS Code tools are described explicitly to the model. This separation prevents the hidden CLI process from editing files or executing commands outside VS Code's normal tool confirmation flow.
 
 ## Settings
 

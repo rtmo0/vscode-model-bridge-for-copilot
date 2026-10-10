@@ -88,7 +88,7 @@ export async function streamClaudeResponse(request: ClaudeCliRequest): Promise<v
 async function runClaudeProcess(request: ClaudeCliRequest, systemPromptPath: string): Promise<void> {
   const args = [
     '-p',
-    '--bare',
+    '--safe-mode',
     '--tools', '',
     '--max-turns', '1',
     '--no-session-persistence',

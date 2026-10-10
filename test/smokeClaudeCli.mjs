@@ -92,7 +92,8 @@ console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false
   const record = JSON.parse(await readFile(recordPath, 'utf8'));
   assert.equal(record.prompt, '<user>\nHello\n</user>');
   assert.equal(record.systemPrompt, 'System instructions');
-  assert(record.args.includes('--bare'));
+  assert(record.args.includes('--safe-mode'));
+  assert(!record.args.includes('--bare'));
   assert(record.args.includes('--no-session-persistence'));
   assert(record.args.includes('--include-partial-messages'));
   assert.deepEqual(record.args.slice(record.args.indexOf('--tools'), record.args.indexOf('--tools') + 2), ['--tools', '']);
