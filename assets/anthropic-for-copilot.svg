@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Anthropic for Copilot abstract collaboration mark">
+  <defs>
+    <linearGradient id="background" x1="52" y1="30" x2="462" y2="486" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#211A2D"/>
+      <stop offset="0.5" stop-color="#171928"/>
+      <stop offset="1" stop-color="#101C2A"/>
+    </linearGradient>
+    <radialGradient id="warmGlow" cx="0" cy="0" r="1" gradientTransform="translate(140 196) rotate(52) scale(248)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E78A5C" stop-opacity="0.52"/>
+      <stop offset="1" stop-color="#E78A5C" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="coolGlow" cx="0" cy="0" r="1" gradientTransform="translate(382 306) rotate(-128) scale(238)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#55C8E8" stop-opacity="0.4"/>
+      <stop offset="1" stop-color="#55C8E8" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="bridge" x1="154" y1="124" x2="357" y2="393" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F2A06E"/>
+      <stop offset="0.48" stop-color="#F3E7D9"/>
+      <stop offset="1" stop-color="#63D4EF"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#05060C" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <rect x="12" y="12" width="488" height="488" rx="116" fill="url(#background)"/>
+  <rect x="12" y="12" width="488" height="488" rx="116" fill="url(#warmGlow)"/>
+  <rect x="12" y="12" width="488" height="488" rx="116" fill="url(#coolGlow)"/>
+  <rect x="18" y="18" width="476" height="476" rx="110" fill="none" stroke="#FFFFFF" stroke-opacity="0.09" stroke-width="3"/>
+
+  <g filter="url(#shadow)">
+    <!-- Original angular A mark: warm reasoning side joined to a cool assistant side. -->
+    <path d="M116 365L217 132C224 116 239 106 256 106C273 106 288 116 295 132L396 365"
+          fill="none" stroke="url(#bridge)" stroke-width="45" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M172 292H340" fill="none" stroke="url(#bridge)" stroke-width="37" stroke-linecap="round"/>
+
+    <!-- Friendly assistant visor nested inside the monogram. -->
+    <path d="M172 246C172 216 196 192 226 192H286C316 192 340 216 340 246V281C340 320 308 352 269 352H243C204 352 172 320 172 281V246Z"
+          fill="#151A29" stroke="#F7EEE5" stroke-width="14"/>
+    <path d="M196 254C196 235 211 220 230 220H282C301 220 316 235 316 254V274C316 301 294 322 268 322H244C218 322 196 301 196 274V254Z"
+          fill="#212A3A" stroke="#64D7F0" stroke-width="7"/>
+    <circle cx="232" cy="269" r="11" fill="#F3A06E"/>
+    <circle cx="280" cy="269" r="11" fill="#69D9F1"/>
+    <path d="M235 301C247 310 265 310 277 301" fill="none" stroke="#F5E9DE" stroke-width="8" stroke-linecap="round"/>
+
+    <!-- Collaboration spark, deliberately distinct from either company logo. -->
+    <path d="M130 132V102M115 117H145M119 106L141 128M141 106L119 128" stroke="#F2A06E" stroke-width="9" stroke-linecap="round"/>
+    <path d="M383 383V357M370 370H396M374 361L392 379M392 361L374 379" stroke="#66D6EF" stroke-width="8" stroke-linecap="round"/>
+  </g>
+</svg>
