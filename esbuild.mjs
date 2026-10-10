@@ -1,7 +1,7 @@
 import { build } from 'esbuild';
 
 await build({
-  entryPoints: ['src/extension.ts'],
+  entryPoints: ['src/anthropicExtension.ts'],
   bundle: true,
   external: ['vscode'],
   format: 'cjs',

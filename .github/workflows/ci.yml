@@ -1,37 +1,29 @@
-name: Pull Request CI
+name: CI
 
 on:
+  push:
+    branches:
+      - main
   pull_request:
     branches:
-      - master
-    types:
-      - opened
-      - synchronize
-      - reopened
-      - ready_for_review
+      - main
   workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  verify:
-    name: Check, compile, and smoke test
+  validate:
+    name: Validate extension
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
+      - name: Check out repository
+        uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
@@ -39,18 +31,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Check changed-file whitespace
-        if: github.event_name == 'pull_request'
-        run: git diff --check "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}"
+      - name: Audit dependencies
+        run: npm audit
 
-      - name: Check TypeScript
-        run: npm run check
-
-      - name: Compile extension
+      - name: Type-check and compile
         run: npm run compile
 
       - name: Run smoke tests
         run: npm run test:smoke
 
-      - name: Run Extension Host smoke test
-        run: xvfb-run -a npm run test:extension-host
+      - name: Verify VSIX packaging
+        run: npm run package:vsix
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: antropic-for-copilot-vsix
+          path: "*.vsix"
+          if-no-files-found: error
+          retention-days: 14

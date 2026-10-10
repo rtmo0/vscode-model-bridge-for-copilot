@@ -1,143 +1,77 @@
 <div align="center">
-  <img src="assets/codex-for-copilot.png" alt="Codex For Copilot logo" width="128" height="128">
+  <img src="assets/anthropic-for-copilot.png" alt="Anthropic for Copilot logo" width="128" height="128">
 
-  <h1>Codex For Copilot</h1>
+  <h1>Anthropic for Copilot</h1>
 
-  <p><strong>Use your Codex models directly inside VS Code Chat and Agent mode.</strong></p>
-
-  <p>
-    <a href="https://marketplace.visualstudio.com/items?itemName=Gaussian.gaussian-codex-for-copilot">
-      <img src="https://img.shields.io/badge/Install_from-VS_Code_Marketplace-007ACC?style=for-the-badge&logo=visualstudiocode&logoColor=white" alt="Install from VS Code Marketplace">
-    </a>
-  </p>
+  <p><strong>Use your signed-in Claude Code account in VS Code Chat and Agent mode.</strong></p>
 </div>
 
-Codex For Copilot is a lightweight VS Code Language Model Provider that connects VS Code Chat to the ChatGPT Codex Responses backend. Select **Codex** from the model picker and keep the native VS Code experience for chat, tools, confirmations, workspace trust, and extensions.
+Anthropic for Copilot is a VS Code Language Model Provider that connects the native VS Code Chat experience to the official Claude Code CLI. It does not ask for an Anthropic API key and does not copy, inspect, or store Claude credentials. Authentication remains owned by Claude Code.
 
-<p align="center">
-  <img src="assets/showcase.gif" alt="Codex For Copilot running in VS Code" width="420">
-</p>
+> This is an independent community extension. It is not affiliated with or endorsed by Anthropic.
 
-## Highlights
+## Features
 
-- **Native VS Code integration** — works in Chat and Agent mode through the standard model picker.
-- **Automatic model discovery** — exposes available upstream Codex models with configurable fallbacks.
-- **Fast streaming transport** — supports reusable WebSocket sessions with HTTP fallback.
-- **VS Code tool support** — forwards built-in, extension, and MCP tool calls through the Responses API.
-- **Hosted Web Search** — optionally gives Codex live web access through OpenAI's native Responses tool, with clickable sources. The same `#webSearch` tool also works with other tool-capable VS Code models.
-- **Optional Native Tool Search** — lets compatible Codex models search selected Agent tools on demand when you explicitly enable it.
-- **Conversation continuity** — reuses compatible response branches for efficient follow-up turns.
-- **Usage visibility** — shows available account limits or Credits in the status bar when supplied by the backend.
-
-## Get started
-
-### 1. Install
-
-Install the extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=Gaussian.gaussian-codex-for-copilot).
-
-### 2. Add credentials
-
-Open the Command Palette and choose one of the following:
-
-- **`Codex for Copilot: Sign in with ChatGPT`** for the normal browser-based login flow.
-- **`Codex for Copilot: Sign in with Device Code`** when a loopback browser callback is unavailable.
-- **`Codex for Copilot: Import Codex auth.json`** to import existing Codex CLI ChatGPT credentials.
-- **`Codex: Set API Key`** to store an API key in VS Code SecretStorage.
-
-The extension stores imported and signed-in ChatGPT credentials in VS Code SecretStorage and refreshes them automatically, including refresh-token rotation. On activation and every five minutes while VS Code is running, it checks all stored accounts (including inactive ones) and refreshes only those due. Importing copies the credentials and never writes to the original `~/.codex/auth.json` file; signing out of an imported credential only removes the extension's copy. The direct `~/.codex/auth.json` fallback remains read-only. If another client rotates or revokes an imported refresh token, the extension's copy cannot recover automatically; sign in through this extension for separate credentials, or re-import a current `auth.json` for that account.
-
-### 3. Select Codex
-
-Open VS Code Chat, choose **Codex** from the model picker, and start chatting or using Agent mode.
-
-To give a request live web access, enable **Web Search** in the Chat tools picker or reference `#webSearch` in the prompt. With a Codex model the Codex backend executes the search directly through OpenAI's hosted `web_search` tool. With any other tool-capable VS Code model, the same `#webSearch` tool runs one isolated Responses request that also uses OpenAI's hosted `web_search` tool and returns the synthesized answer plus sources.
-
-Web Search settings under **Settings → Extensions → Codex** let you choose live or cached access, search context size, and an optional domain allowlist. You can also choose whether Chat shows compact statuses, search/open/find actions, or actions with clickable source pages.
-
-## Tool discovery
-
-The extension uses **VS Code Virtual Tool Groups by default**. VS Code organizes selected Agent tools into groups and reveals a group when the model needs it.
-
-**Native Tool Search is optional.** When enabled, it temporarily disables VS Code Virtual Tool Groups and instead lets the Codex backend search the selected tool catalog and load matching tools on demand. Both methods solve the same problem—avoiding loading every tool into the model at once—but VS Code performs the grouping in the default mode, while Codex performs the search in Native Tool Search mode.
-
-Use **`Codex: Enable Native Tool Search`** to opt in. The extension saves the previous VS Code grouping setting. Use **`Codex: Use VS Code Virtual Tool Groups`** to disable Native Tool Search and restore that setting. Tool execution, confirmation, workspace trust, and permissions remain handled by VS Code in both modes.
-
-Hosted Web Search is independent from Native Tool Search. It remains available when Native Tool Search is disabled and is only combined with selected client tools in the final Responses API `tools` array.
+- Claude models appear in the native VS Code model picker.
+- Uses the official Claude Code browser sign-in and locally stored session.
+- Streams text and thinking from Claude Code's `stream-json` output.
+- Forwards selected VS Code Agent tools through a constrained tool-call protocol; VS Code remains responsible for tool execution, confirmation, and workspace trust.
+- Supports stable Claude Code model aliases: Default, Sonnet, Opus, and Haiku.
+- Never stores API keys or OAuth tokens in VS Code SecretStorage.
 
 ## Requirements
 
 - VS Code 1.104.0 or newer.
-- A ChatGPT sign-in, imported Codex CLI `auth.json`, or API key.
+- The official [Claude Code CLI](https://code.claude.com/docs/en/setup) installed on the same host where the extension runs.
+- A Claude account or another authentication method supported by Claude Code.
 
-## Common commands
+Remote-SSH, Dev Containers, WSL, and Codespaces run workspace extensions remotely, so Claude Code must be installed and signed in on that remote host.
 
-- `Codex: Manage`
-- `Codex: Open Settings`
-- `Codex: Open Logs`
-- `Codex: Refresh Account Limits`
-- `Codex: Enable Native Tool Search`
-- `Codex: Use VS Code Virtual Tool Groups`
-- `Codex: Show Native Tool Search Status`
-- `Codex for Copilot: Sign in with ChatGPT`
-- `Codex for Copilot: Add Codex Account`
-- `Codex for Copilot: Switch Codex Account`
-- `Codex for Copilot: Remove Codex Account`
-- `Codex for Copilot: Sign in with Device Code`
-- `Codex for Copilot: Import Codex auth.json`
-- `Codex for Copilot: Show Auth Status`
-- `Codex for Copilot: Sign Out (All Accounts)`
+## Sign in
 
-## Diagnostics and privacy
+Open the Command Palette and use either command:
 
-Use **Codex: Open Logs** to view the extension's structured VS Code log channel. Each model request, authentication flow, model discovery operation, and account-limit refresh receives an `operationId`; search for that value to follow one operation through retries, WebSocket fallback, and completion.
+- **Anthropic for Copilot: Sign in with Browser** runs `claude auth login` in a VS Code terminal. This is the shortest route to Claude Code's official browser flow.
+- **Anthropic for Copilot: Sign in with Claude Code** opens the interactive `claude` terminal. Claude Code starts its official setup flow when no account is signed in.
 
-The channel follows VS Code's native log level. Use **Developer: Set Log Level...** and select the Codex channel to enable Debug or Trace detail when investigating a problem.
+Both commands delegate authentication entirely to Claude Code. After login, run **Anthropic for Copilot: Refresh Models** or reopen the model picker.
 
-Logs never include prompt or instruction text, reasoning, tool arguments/results, credentials, cookies, or Turn State. They retain only safe counts, sizes, hashes, identifiers hashed for correlation, transport decisions, and redacted error metadata.
+Use **Anthropic for Copilot: Show Sign-In Status** to run `claude auth status`, or **Anthropic for Copilot: Sign Out** to run `claude auth logout`.
 
-## Configuration
+## Use Claude in Chat
 
-Most users can keep the defaults. Advanced settings are available under **Settings → Extensions → Codex**, including:
+1. Open VS Code Chat.
+2. Open the model picker.
+3. Choose **Claude** and then Default, Sonnet, Opus, or Haiku.
+4. Use Chat or Agent mode normally.
 
-- credential source
-- backend URL
-- model catalog `client_version` override (defaults to `999.0.0` for discovery only; does not change Codex protocol headers)
-- HTTP or WebSocket transport
-- fallback model and model visibility
-- reasoning effort and service tier
-- request compression and WebSocket prewarming
-- Web Search access, context, domains, and status detail
+Each request runs Claude Code in non-interactive print mode with streamed JSON output, session persistence disabled, and Claude Code's built-in tools disabled. Selected VS Code tools are described explicitly to the model. This separation prevents the hidden CLI process from editing files or executing commands outside VS Code's normal tool confirmation flow.
 
-For a proxy-required network, set VS Code's `http.proxy` setting or the Extension Host's `HTTPS_PROXY`/`HTTP_PROXY` environment variable. The provider applies that proxy consistently to model discovery, account usage, HTTP Responses requests, token counting, and WebSocket requests; `NO_PROXY` remains honored.
+## Settings
+
+- `anthropicForCopilot.claudePath`: executable name or absolute path, default `claude`.
+- `anthropicForCopilot.model`: fallback Claude Code model alias, default `default`.
+- `anthropicForCopilot.instructions`: instructions appended to every request.
+- `anthropicForCopilot.maxOutputTokens`: output capacity advertised to VS Code.
+
+## Privacy and security
+
+The extension sends the current VS Code Chat transcript and selected tool definitions to the local Claude Code process. Claude Code then communicates with Anthropic according to its own configuration and privacy terms.
+
+The extension never reads Claude Code credential files, exports OAuth tokens, or accepts an Anthropic API key. It removes `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, and `CLAUDE_CODE_OAUTH_TOKEN` from provider and sign-in process environments so requests use Claude Code's own saved sign-in. It disables Claude Code's built-in tools for provider requests, removes temporary system-prompt files after each request, and logs only request metadata and output sizes rather than prompt or response content.
 
 ## Develop locally
 
 ```bash
 npm install
-npm run compile
-```
-
-Press `F5` in VS Code to launch an Extension Development Host.
-
-Useful checks:
-
-```bash
 npm run check
+npm run compile
 npm run test:smoke
-npm run test:extension-host
 npm run package:vsix
 ```
 
-Release and Marketplace publishing details are documented in [docs/releasing.md](docs/releasing.md).
-
-## Remote workspaces
-
-In Remote-SSH, Dev Containers, WSL, and Codespaces, the extension prefers the remote workspace host to work around [issue #25](https://github.com/GaussianGuaicai/Codex-For-Copilot/issues/25). It runs locally in local workspaces. No settings change is needed.
-
-VS Code SecretStorage credentials remain available. The `~/.codex/auth.json` fallback is read on the host running the extension. If browser sign-in fails remotely, use **Codex for Copilot: Sign in with Device Code**.
-
-This preference remains remote after [VS Code fixes the routing bug](https://github.com/microsoft/vscode/issues/326554); it does not automatically switch back to the local host.
+Press `F5` in VS Code to launch an Extension Development Host. Release packaging is documented in [docs/releasing.md](docs/releasing.md).
 
 ## License
 
-[MIT](LICENSE)
+MIT. This project is based on the MIT-licensed Codex For Copilot project; attribution is retained in [LICENSE](LICENSE).
