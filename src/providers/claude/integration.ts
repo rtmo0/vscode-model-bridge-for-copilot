@@ -13,7 +13,7 @@ export function activateClaude(context: vscode.ExtensionContext): void {
     fetchReport: () => fetchClaudeUsageReport(getClaudeProviderConfig().claudePath),
     output
   });
-  const provider = new ClaudeModelProvider(output, (usage) => usageStatusBar.record(usage));
+  const provider = new ClaudeModelProvider(output, (usage) => usageStatusBar.record(usage), context.globalState);
   // Keeps the account limits in step with the CLI sign-in, like Codex does with its auth events.
   const syncAccount = async (): Promise<void> => {
     const status = await getClaudeCliStatus(getClaudeProviderConfig().claudePath);

@@ -67,6 +67,16 @@ try {
     provider.resolveTokenLimits({ maxInputTokens: 1000000, maxOutputTokens: 128000 }, { defaultContextSize: 100000, maxOutputTokens: 128000 }),
     { maxInputTokens: 50000, maxOutputTokens: 50000 }
   );
+  const creditsMessage = 'Fable 5.1 requires usage credits. Switch to another model, or manage usage credits at https://claude.ai/settings/usage?from=cc_cli_limit_message, to continue.';
+  assert.deepEqual(provider.getRejectedClaudeModels(creditsMessage, 'best'), ['fable', 'best'], 'Fable credit rejection hides both Fable aliases');
+  assert.deepEqual(provider.getRejectedClaudeModels(creditsMessage, 'fable'), ['fable', 'best']);
+  assert.deepEqual(provider.getRejectedClaudeModels(creditsMessage, 'default'), ['default'], 'default only hides itself');
+  assert.deepEqual(
+    provider.getRejectedClaudeModels('The selected Claude model is unavailable for this account. Choose another model or update Claude Code.', 'opus'),
+    ['opus']
+  );
+  assert.equal(provider.getRejectedClaudeModels('Claude account usage limit reached. Check the Claude usage status bar for reset times.', 'opus'), undefined, 'usage limits do not hide models');
+  assert.equal(provider.getRejectedClaudeModels('Claude Code request timed out.', 'opus'), undefined);
   console.log('Claude provider model option smoke tests passed.');
 } finally {
   await rm(directory, { recursive: true, force: true });

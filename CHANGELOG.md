@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.0
+
+### Codex
+
+- Fixed `502 The '<model>' model requires a newer version of Codex` for newer models such as `gpt-6-astra` and `gpt-5.6-sol`. Requests now declare the current Codex protocol version (`0.162.1`) in the `version` header, as the official Codex CLI does, instead of the extension's own version. The `codexCliCompatible` identity profile now sends this header as well.
+- The model picker now hides models whose catalog `minimal_client_version` is newer than the declared Codex version.
+- Models the backend rejects for this client or account (for example `is not supported when using Codex with a ChatGPT account`) are hidden from the model picker after the first rejection and reported with a clear error instead of a raw 502. The rejection is remembered per account for 7 days and retried automatically after a Codex version update.
+
+### Claude
+
+- Models that Claude Code refuses for the signed-in account (for example `Fable 5.1 requires usage credits`) are hidden from the model picker after the first refusal. A Fable refusal hides both Fable and Best, because Best resolves to Fable. Hidden models return after 24 hours or after Refresh in the Claude Manage menu.
+
+### Notes
+
+- Copilot agent sessions send model requests through the first open VS Code window. After updating, reload every VS Code window so agent sessions use the new version.
+
 ## 0.1.0
 
 - Rebranded the extension as Model Bridge for Copilot with independent Claude, Codex, and LM Studio provider groups.

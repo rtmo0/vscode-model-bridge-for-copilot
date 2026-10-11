@@ -81,6 +81,17 @@ jobs:
           fi
           echo "path=${VSIX_PATH#./}" >> "$GITHUB_OUTPUT"
 
+      - name: Extract release notes
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          node -e '
+            const version = process.env.RELEASE_TAG.replace(/^v/, "");
+            const changelog = require("fs").readFileSync("CHANGELOG.md", "utf8");
+            const section = changelog.split(/^## /m).find((part) => part.startsWith(`${version}\n`));
+            process.stdout.write(section ? section.slice(version.length).trim() + "\n" : "");
+          ' > release-notes.md
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -89,6 +100,8 @@ jobs:
         run: |
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" "$VSIX_PATH" --clobber
+          elif [[ -s release-notes.md ]]; then
+            gh release create "$RELEASE_TAG" "$VSIX_PATH" --verify-tag --notes-file release-notes.md --title "$RELEASE_TAG"
           else
             gh release create "$RELEASE_TAG" "$VSIX_PATH" --verify-tag --generate-notes --title "$RELEASE_TAG"
           fi

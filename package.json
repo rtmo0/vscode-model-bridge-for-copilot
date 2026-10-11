@@ -2,7 +2,7 @@
   "name": "model-bridge-for-copilot",
   "displayName": "Model Bridge for Copilot - Claude, Codex & Local LLMs",
   "description": "Use Claude subscriptions, ChatGPT Codex, and local LM Studio models in native VS Code Chat and Agent mode.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "samarin-aa-aka-rtm00",
   "icon": "assets/model-bridge-for-copilot.png",
   "license": "MIT",
@@ -59,7 +59,7 @@
     "package": "vsce package --no-dependencies",
     "watch": "tsc -watch -p ./",
     "vscode:prepublish": "npm run compile",
-    "test:codex": "node test/providers/codex/smokeCodexProtocol.mjs && node test/providers/codex/smokeCodexRequestBuilder.mjs && node test/providers/codex/smokeResponsesClient.mjs && node test/providers/codex/smokeConversationReuse.mjs && node test/providers/codex/smokeAccountUsage.mjs && node test/providers/codex/smokeAuth.mjs && node test/providers/codex/smokeToolCallTracking.mjs",
+    "test:codex": "node test/providers/codex/smokeCodexProtocol.mjs && node test/providers/codex/smokeCodexRequestBuilder.mjs && node test/providers/codex/smokeResponsesClient.mjs && node test/providers/codex/smokeConversationReuse.mjs && node test/providers/codex/smokeAccountUsage.mjs && node test/providers/codex/smokeAuth.mjs && node test/providers/codex/smokeToolCallTracking.mjs && node test/providers/codex/smokeModelResolution.mjs",
     "test:lmstudio": "node test/providers/lmstudio/smokeLmStudioProtocol.mjs && node test/providers/lmstudio/smokeLmStudioProvider.mjs",
     "test:claude": "node test/providers/claude/smokeClaudeProtocol.mjs && node test/providers/claude/smokeClaudeCli.mjs && node test/providers/claude/smokeClaudeSessionStore.mjs && node test/providers/claude/smokeClaudeProviderOptions.mjs && node test/providers/claude/smokeClaudeUsageStatus.mjs"
   },

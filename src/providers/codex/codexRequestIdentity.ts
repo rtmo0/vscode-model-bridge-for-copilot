@@ -2,7 +2,7 @@ import os from 'node:os';
 import { readFileSync } from 'node:fs';
 
 export const CODEX_IDENTITY_UPSTREAM_COMMIT = '657a993cbee87acf52d14b758ce49dbd46d1b8eb';
-export const CODEX_CLI_COMPATIBLE_VERSION = '0.153.2';
+export const CODEX_CLI_COMPATIBLE_VERSION = '0.162.1';
 
 export type CodexRequestIdentityProfile = 'extension' | 'codexCliCompatible' | 'neutral' | 'custom';
 
@@ -51,6 +51,7 @@ export function resolveRequestIdentity(options: ResolveRequestIdentityOptions): 
       profile,
       originator: 'codex_cli_rs',
       userAgent: `codex_cli_rs/${CODEX_CLI_COMPATIBLE_VERSION} (${platform.osType} ${platform.osVersion}; ${platform.architecture}) ${platform.terminalUserAgent}`,
+      version: CODEX_CLI_COMPATIBLE_VERSION,
       agentName: '/root'
     };
   }
@@ -58,7 +59,8 @@ export function resolveRequestIdentity(options: ResolveRequestIdentityOptions): 
     profile: 'extension',
     originator: 'model-bridge-codex',
     userAgent: options.extensionUserAgent,
-    version: options.extensionVersion,
+    // The backend gates models by the Codex protocol `version` header, not by extension version.
+    version: CODEX_CLI_COMPATIBLE_VERSION,
     agentName: 'model-bridge-codex',
     source: 'vscode-language-model-provider'
   };

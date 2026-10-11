@@ -69,6 +69,9 @@ const CLAUDE_EFFORTS: readonly ClaudeEffort[] = ['low', 'medium', 'high', 'xhigh
 const CLAUDE_CONTEXT_SIZES = [100_000, 200_000, 500_000, 1_000_000] as const;
 const USAGE_DATA_PART_MIME = 'usage';
 const READY_STATUS_TTL_MS = 60_000;
+const UNAVAILABLE_MODELS_KEY = 'modelBridge.claude.unavailableModels';
+const UNAVAILABLE_MODEL_TTL_MS = 24 * 60 * 60_000;
+const MODEL_ACCESS_REJECTION = /requires usage credits|unavailable for this account|model.+(?:not available|not found|unsupported)|does not support this model/i;
 
 export class ClaudeModelProvider implements vscode.LanguageModelChatProvider, vscode.Disposable {
   private readonly modelsChanged = new vscode.EventEmitter<void>();
@@ -81,7 +84,8 @@ export class ClaudeModelProvider implements vscode.LanguageModelChatProvider, vs
 
   constructor(
     private readonly output: vscode.LogOutputChannel,
-    private readonly usageSink?: (usage: ClaudeUsageUpdate) => void
+    private readonly usageSink?: (usage: ClaudeUsageUpdate) => void,
+    private readonly state?: vscode.Memento
   ) {}
 
   dispose(): void {
@@ -90,6 +94,7 @@ export class ClaudeModelProvider implements vscode.LanguageModelChatProvider, vs
   }
 
   refresh(): void {
+    void this.state?.update(UNAVAILABLE_MODELS_KEY, undefined);
     this.sessionStore.clear();
     this.markerNonce = createMarkerNonce();
     this.statusCache = undefined;
@@ -177,8 +182,9 @@ export class ClaudeModelProvider implements vscode.LanguageModelChatProvider, vs
       return [];
     }
 
+    const unavailableModels = this.getUnavailableModels();
     return CLAUDE_MODELS
-      .filter((model) => config.enabledModels.includes(model.id))
+      .filter((model) => config.enabledModels.includes(model.id) && !unavailableModels.has(model.id))
       .map((model): ModelPickerChatInformation => {
         const limits = resolveTokenLimits(model, config);
         return {
@@ -248,7 +254,7 @@ export class ClaudeModelProvider implements vscode.LanguageModelChatProvider, vs
       hasWorkspace: Boolean(workspaceFolder)
     });
 
-    await streamClaudeResponse({
+    await this.streamWithModelAccessCheck(selectedModel, {
       executable: config.claudePath,
       model: selectedModel,
       effort,
@@ -322,6 +328,45 @@ export class ClaudeModelProvider implements vscode.LanguageModelChatProvider, vs
       thinkingCharacters,
       toolCallCount
     });
+  }
+
+  private async streamWithModelAccessCheck(
+    selectedModel: string,
+    request: Parameters<typeof streamClaudeResponse>[0]
+  ): Promise<void> {
+    try {
+      await streamClaudeResponse(request);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const rejectedModels = getRejectedClaudeModels(message, selectedModel);
+      if (!rejectedModels) {
+        throw error;
+      }
+      this.markModelsUnavailable(rejectedModels);
+      this.output.warn('Claude model hidden after access rejection', { models: rejectedModels });
+      const rejection = new Error(`${message.replace(/\.?\s*$/, '.')} Claude ${selectedModel} has been hidden from the model picker; choose another model. Use Refresh in the Claude Manage menu after changing your plan or credits.`);
+      (rejection as Error & { cause?: unknown }).cause = error;
+      throw rejection;
+    }
+  }
+
+  private getUnavailableModels(): Set<string> {
+    return new Set(Object.keys(this.readUnavailableModels()));
+  }
+
+  private readUnavailableModels(): Record<string, number> {
+    const stored = this.state?.get<Record<string, number>>(UNAVAILABLE_MODELS_KEY);
+    const now = Date.now();
+    return Object.fromEntries(Object.entries(stored && typeof stored === 'object' ? stored : {})
+      .filter(([, expiresAt]) => typeof expiresAt === 'number' && expiresAt > now));
+  }
+
+  private markModelsUnavailable(models: readonly string[]): void {
+    const next = this.readUnavailableModels();
+    for (const model of models) {
+      next[model] = Date.now() + UNAVAILABLE_MODEL_TTL_MS;
+    }
+    void this.state?.update(UNAVAILABLE_MODELS_KEY, next).then(() => this.modelsChanged.fire());
   }
 
   async provideTokenCount(
@@ -563,4 +608,15 @@ function normalizeEnabledModels(value: unknown): string[] {
     typeof entry === 'string' && knownModels.has(entry as typeof CLAUDE_MODELS[number]['id'])
   )))];
   return models.length > 0 ? models : ['default'];
+}
+
+/** Models to hide after Claude Code refuses the selected model for this account. */
+export function getRejectedClaudeModels(message: string, selectedModel: string): string[] | undefined {
+  if (!MODEL_ACCESS_REJECTION.test(message)) {
+    return undefined;
+  }
+  // `best` resolves to Fable when Claude Code offers it, so a Fable rejection hides both aliases.
+  return /\bfable\b/i.test(message) && (selectedModel === 'fable' || selectedModel === 'best')
+    ? ['fable', 'best']
+    : [selectedModel];
 }

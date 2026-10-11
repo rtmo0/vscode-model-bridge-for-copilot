@@ -69,8 +69,11 @@ import {
   RuntimeModelAvailability,
   TEMPORARILY_UNAVAILABLE_MODEL_TTL_MS,
   buildModelCacheKey,
+  createBackendRejectedModelError,
   createTemporarilyUnavailableModelError,
+  getBackendModelRejection,
   getExactModelNotFoundName,
+  isClientVersionSupported,
   getRequestServiceTier,
   resolveModelAliasTarget
 } from './providerModelResolution';
@@ -176,7 +179,7 @@ export class CodexModelProvider implements vscode.LanguageModelChatProvider {
   readonly onDidChangeLanguageModelChatInformation: vscode.Event<void>;
   private readonly modelInfoChangedEmitter = new vscode.EventEmitter<void>();
   private readonly responseBranchStore = new ResponseBranchStore();
-  private readonly runtimeAvailability = new RuntimeModelAvailability();
+  private readonly runtimeAvailability: RuntimeModelAvailability;
   private readonly identityManager: CodexIdentityManager;
   private readonly reportedToolCalls = new ReportedToolCallTracker();
   private readonly toolOutputContinuationCapabilities = new ToolOutputContinuationCapabilities();
@@ -204,6 +207,7 @@ export class CodexModelProvider implements vscode.LanguageModelChatProvider {
       globalState?: vscode.Memento;
     };
     this.identityManager = new CodexIdentityManager(runtimeContext.globalState ?? createMemoryMemento());
+    this.runtimeAvailability = new RuntimeModelAvailability(runtimeContext.globalState);
     this.onDidChangeLanguageModelChatInformation = this.modelInfoChangedEmitter.event;
     this.context.subscriptions.push(
       this.modelInfoChangedEmitter,
@@ -1314,19 +1318,24 @@ export class CodexModelProvider implements vscode.LanguageModelChatProvider {
         await streamRequest(recoveryReplayInput);
       } else {
         if (!initialPreviousResponseId || !isResponsesContinuationMissError(error)) {
-          const unavailableModel = getExactModelNotFoundName(error, selectedModel.requestModel);
+          const backendRejection = getBackendModelRejection(error, selectedModel.requestModel);
+          const unavailableModel = backendRejection?.model ?? getExactModelNotFoundName(error, selectedModel.requestModel);
           if (!unavailableModel) {
             throw error;
           }
 
-          this.markModelUnavailable(unavailableModel, config, credentials, authIdentity);
+          this.markModelUnavailable(unavailableModel, config, credentials, authIdentity, backendRejection !== undefined);
 
           this.outputChannel.warn('response model unavailable', {
             rejectedModel: unavailableModel,
+            reason: backendRejection?.reason ?? 'model-not-found',
+            requestIdentityProfile: config.requestIdentity.profile,
             previousResponseId: initialPreviousResponseId ?? null
           });
 
-          throw createTemporarilyUnavailableModelError(unavailableModel, error);
+          throw backendRejection
+            ? createBackendRejectedModelError(unavailableModel, backendRejection.reason, error)
+            : createTemporarilyUnavailableModelError(unavailableModel, error);
         }
 
         if (reportedVisibleOutput) {
@@ -1708,10 +1717,13 @@ export class CodexModelProvider implements vscode.LanguageModelChatProvider {
       extensionUserAgent: buildCodexUserAgent(getExtensionVersion(this.context))
     });
     const upstreamModels = await fetchAvailableModels(config, credentials, token, clientIdentity);
-    const models = this.applyModelDiscoveryPolicy(buildProviderModels(config, upstreamModels, credentials.kind), config, authIdentity);
+    const callableModels = upstreamModels.filter((model) => isClientVersionSupported(model.minimal_client_version, clientIdentity.version));
+    const models = this.applyModelDiscoveryPolicy(buildProviderModels(config, callableModels, credentials.kind), config, authIdentity);
     logger.debug('getAvailableModels discovery success', {
       catalogClientVersion: config.clientVersion,
       discoveredCount: upstreamModels.length,
+      declaredClientVersion: clientIdentity.version ?? null,
+      hiddenByClientVersion: upstreamModels.filter((model) => !callableModels.includes(model)).map((model) => model.slug),
       returnedCount: models.length,
       minimumClientVersions: upstreamModels.flatMap((model) => {
         const version = model.minimal_client_version;
@@ -1734,9 +1746,14 @@ export class CodexModelProvider implements vscode.LanguageModelChatProvider {
     model: string,
     config: ProviderConfig,
     credentials: NonNullable<Awaited<ReturnType<typeof getApiCredentials>>>,
-    authIdentity: string
+    authIdentity: string,
+    persistent = false
   ): void {
-    this.runtimeAvailability.markTemporarilyUnavailable(model, config, authIdentity);
+    if (persistent) {
+      this.runtimeAvailability.markRejectedByBackend(model, config, authIdentity);
+    } else {
+      this.runtimeAvailability.markTemporarilyUnavailable(model, config, authIdentity);
+    }
     const cacheKey = buildModelCacheKey(config, credentials.source, credentials.kind, authIdentity);
     const cachedCatalog = this.modelCache.peek(cacheKey);
     if (cachedCatalog?.authoritative) {
