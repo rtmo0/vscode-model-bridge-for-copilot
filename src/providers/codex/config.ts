@@ -45,6 +45,7 @@ export interface ProviderConfig {
   defaultReasoningEffort?: KnownReasoningEffort;
   accountUsageShowAccountName: boolean;
   maxOutputTokens: number;
+  textVerbosity: 'low' | 'medium' | 'high';
   modelPricingUsdPerMTok: Record<string, ModelPricing>;
 }
 
@@ -90,6 +91,7 @@ export function getProviderConfig(): ProviderConfig {
     defaultReasoningEffort: normalizeDefaultReasoningEffort(config.get('defaultReasoningEffort', 'auto')),
     accountUsageShowAccountName: config.get('accountUsageShowAccountName', false),
     maxOutputTokens: config.get('maxOutputTokens', 8192),
+    textVerbosity: normalizeTextVerbosity(config.get('textVerbosity', 'medium')),
     modelPricingUsdPerMTok: normalizeModelPricing(config.get('modelPricingUsdPerMTok', {}))
   };
 }
@@ -157,6 +159,10 @@ function normalizeTransport(value: string): ProviderConfig['transport'] {
     default:
       return 'auto';
   }
+}
+
+function normalizeTextVerbosity(value: unknown): ProviderConfig['textVerbosity'] {
+  return value === 'low' || value === 'high' ? value : 'medium';
 }
 
 function normalizeDefaultServiceTier(value: string): ProviderConfig['defaultServiceTier'] {

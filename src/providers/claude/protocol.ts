@@ -105,9 +105,50 @@ export function parseProviderModelId(modelId: string, fallback: string): string 
 }
 
 export function buildClaudePrompt(messages: readonly ClaudePromptMessage[]): string {
-  return messages
-    .map((message) => `<${message.role}>\n${message.content}\n</${message.role}>`)
-    .join('\n\n');
+  return buildClaudePromptBlocks(messages).join('\n\n');
+}
+
+// One block per message keeps earlier blocks byte-identical across tool-loop requests,
+// so Anthropic prompt caching can match the previous request's prefix at a block boundary.
+export function buildClaudePromptBlocks(messages: readonly ClaudePromptMessage[]): string[] {
+  return messages.map((message) => `<${message.role}>\n${message.content}\n</${message.role}>`);
+}
+
+/** Serializes prompt blocks as a single stream-json user message for `--input-format stream-json`. */
+export function buildClaudeStreamJsonInput(blocks: readonly string[]): string {
+  return `${JSON.stringify({
+    type: 'user',
+    message: {
+      role: 'user',
+      content: blocks.map((text) => ({ type: 'text', text }))
+    },
+    parent_tool_use_id: null,
+    session_id: ''
+  })}\n`;
+}
+
+const SCHEMA_ANNOTATION_KEYS = new Set(['$schema', '$id', '$comment', 'title', 'examples', 'markdownDescription']);
+const SCHEMA_NAME_MAP_KEYS = new Set(['properties', 'patternProperties', '$defs', 'definitions', 'dependentSchemas']);
+const SCHEMA_LITERAL_KEYS = new Set(['default', 'const', 'enum']);
+
+/** Drops JSON Schema annotations that do not constrain arguments; property names are never removed. */
+export function compactToolSchema(schema: unknown, isNameMap = false): unknown {
+  if (Array.isArray(schema)) {
+    return schema.map((entry) => compactToolSchema(entry));
+  }
+  if (!isRecord(schema)) {
+    return schema;
+  }
+  const compacted: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(schema)) {
+    if (!isNameMap && SCHEMA_ANNOTATION_KEYS.has(key)) {
+      continue;
+    }
+    compacted[key] = !isNameMap && SCHEMA_LITERAL_KEYS.has(key)
+      ? value
+      : compactToolSchema(value, !isNameMap && SCHEMA_NAME_MAP_KEYS.has(key));
+  }
+  return compacted;
 }
 
 export function buildClaudeSystemPrompt(

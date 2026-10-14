@@ -2,7 +2,7 @@
   "name": "model-bridge-for-copilot",
   "displayName": "Model Bridge for Copilot - Claude, Codex & Local LLMs",
   "description": "Use Claude subscriptions, ChatGPT Codex, and local LM Studio models in native VS Code Chat and Agent mode.",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "publisher": "samarin-aa-aka-rtm00",
   "icon": "assets/model-bridge-for-copilot.png",
   "license": "MIT",
@@ -362,9 +362,9 @@
         },
         "modelBridge.claude.maxOutputTokens": {
           "type": "integer",
-          "default": 128000,
+          "default": 32000,
           "minimum": 1,
-          "description": "Output-token capacity advertised to VS Code. Claude Code and the selected model enforce the actual limit."
+          "description": "Output-token capacity advertised to VS Code. It is reserved from the context window, so smaller values leave more room for the conversation before Copilot summarizes it. Claude Code and the selected model enforce the actual limit."
         },
         "modelBridge.claude.defaultEffort": {
           "type": "string",
@@ -387,7 +387,7 @@
         },
         "modelBridge.claude.defaultContextSize": {
           "type": "integer",
-          "default": 1000000,
+          "default": 200000,
           "enum": [
             100000,
             200000,
@@ -400,7 +400,20 @@
             "500K",
             "1M"
           ],
-          "description": "Default Claude Code auto-compact context window shown in the model picker."
+          "description": "Default Claude Code auto-compact context window shown in the model picker. Copilot summarizes the conversation near this budget; larger windows resend more history with every request and use account limits faster."
+        },
+        "modelBridge.claude.systemPrompt": {
+          "type": "string",
+          "default": "minimal",
+          "enum": [
+            "minimal",
+            "claudeCode"
+          ],
+          "enumDescriptions": [
+            "Replace Claude Code's coding-agent system prompt with the configured instructions and VS Code tool catalog. Smaller and stable across requests, so it stays in the prompt cache.",
+            "Append to Claude Code's default system prompt, with per-machine sections (cwd, environment, git status) moved out of it to keep it cacheable."
+          ],
+          "description": "System prompt used for Claude Code requests. VS Code Chat already supplies its own agent instructions."
         },
         "modelBridge.claude.usageStatusBar": {
           "type": "boolean",
@@ -796,6 +809,21 @@
           "tags": [
             "advanced"
           ]
+        },
+        "modelBridge.codex.textVerbosity": {
+          "type": "string",
+          "default": "medium",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "enumDescriptions": [
+            "Shorter final answers and fewer output tokens. Some models accept only medium.",
+            "Default Codex verbosity.",
+            "More detailed final answers."
+          ],
+          "description": "Responses API text verbosity. Lower verbosity shortens final answers and saves account usage; it does not change reasoning effort."
         },
         "modelBridge.codex.modelPricingUsdPerMTok": {
           "type": "object",

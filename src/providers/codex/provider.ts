@@ -432,7 +432,7 @@ export class CodexModelProvider implements vscode.LanguageModelChatProvider {
       store: false,
       omitMaxOutputTokens: credentials.omitMaxOutputTokens,
       maxOutputTokens: config.maxOutputTokens,
-      textVerbosity: 'medium',
+      textVerbosity: config.textVerbosity,
       includeEncryptedReasoning: true,
       protocolSettings: config.protocol,
       clientIdentity
@@ -913,6 +913,7 @@ export class CodexModelProvider implements vscode.LanguageModelChatProvider {
         toolMode: requestOptions.toolMode,
         reasoning: requestOptions.reasoning,
         maxOutputTokens: requestOptions.maxOutputTokens,
+        textVerbosity: requestOptions.textVerbosity,
         token,
         hasProviderVisibleOutput: () => reportedVisibleOutput,
         onTextDelta: (text) => {

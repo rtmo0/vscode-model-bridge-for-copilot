@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.0
+
+### Claude
+
+- Lower account usage per request. Conversation history is sent as one stream-json message with a content block per chat message, so tool-loop requests reuse the prompt cache for the unchanged prefix instead of rewriting the whole history.
+- New `modelBridge.claude.systemPrompt` setting. The default `minimal` replaces Claude Code's coding-agent system prompt, whose cwd, environment, and git status sections changed between requests and invalidated the cached tool catalog. `claudeCode` keeps the default prompt with those sections moved out (`--exclude-dynamic-system-prompt-sections`).
+- The VS Code tool catalog is sorted by name and JSON Schema annotations (`$schema`, `title`, `examples`, …) are removed, keeping the system prompt smaller and byte-stable.
+- Default context size is now 200K and the advertised output reservation is 32K, so Copilot summarizes long conversations instead of resending up to 1M tokens of history.
+- The request log now includes input, cache-write, cache-read, and output token counts.
+
+### Codex
+
+- New `modelBridge.codex.textVerbosity` setting (default `medium`). `low` shortens final answers.
+
 ## 0.2.0
 
 ### Codex

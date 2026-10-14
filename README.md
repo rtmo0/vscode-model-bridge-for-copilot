@@ -28,6 +28,7 @@ Each provider has its own model-picker group and management command. Run **Model
 - Provider-specific model controls for reasoning effort, context size, temperature, and service tier.
 - Matching Claude and Codex account-limit status bars (`Claude: 5h 74% · Weekly 65%`, `Codex: 5h 64% · Weekly 82%`) that refresh on startup, every 5 minutes, and after each request, with the latest request's token usage in the tooltip.
 - The same Manage menu layout (Account, Usage, Models/Tools, Diagnostics) and Doctor report for every provider.
+- Prompt-cache-friendly requests that conserve Claude and ChatGPT subscription limits during long agent sessions.
 - Codex multi-account OAuth, automatic refresh, WebSocket reuse, continuation, hosted Web Search, and optional Native Tool Search.
 - LM Studio native model metadata including loaded context, vision, tool-use training, architecture, size, and quantization.
 - Safe diagnostics for every provider without logging prompts, responses, credentials, or tool contents.
@@ -40,7 +41,7 @@ Each provider has its own model-picker group and management command. Run **Model
 2. Run **Model Bridge: Claude: Sign in with Browser**.
 3. Choose a model from the **Claude** group in VS Code Chat.
 
-Claude account limits come from Claude Code's local `/usage` command, which makes no model request, and from the rate-limit events streamed with each response. Claude requests remove API-key environment variables, disable Claude Code built-in tools, use safe mode, and remove permission-restricted temporary prompt files after every request. Optional compatible session continuation is disabled by default because it causes Claude Code to retain local session history.
+Claude account limits come from Claude Code's local `/usage` command, which makes no model request, and from the rate-limit events streamed with each response. Claude requests remove API-key environment variables, disable Claude Code built-in tools, use safe mode, and remove permission-restricted temporary prompt files after every request. By default the configured instructions and VS Code tool catalog replace Claude Code's coding-agent system prompt (`modelBridge.claude.systemPrompt`); VS Code Chat supplies its own agent instructions. Optional compatible session continuation is disabled by default because it causes Claude Code to retain local session history.
 
 ### Codex
 
@@ -86,6 +87,26 @@ Provider settings live under **Settings → Extensions → Model Bridge** and us
 ### Upgrading from Anthropic for Copilot or Codex For Copilot
 
 Settings under `anthropicForCopilot.*` and `codexModelProvider.*` are copied to the new sections on first activation. Credentials cannot be carried over because VS Code SecretStorage is scoped per extension, so run **Model Bridge: Codex: Sign in with Browser** again. Claude sign-in is owned by Claude Code and keeps working.
+
+### Saving account usage
+
+Claude and ChatGPT subscriptions are limited by tokens, and agent sessions resend the conversation with every tool call. Model Bridge keeps those requests cheap by default:
+
+- **Claude:** history is sent as one content block per chat message, the system prompt and tool catalog stay byte-stable between requests (no cwd, environment, or git status sections; tools sorted, schema annotations removed), so each tool step reads the earlier conversation from the prompt cache instead of rewriting it.
+- **Claude:** the default context size is 200K with a 32K output reservation, so Copilot summarizes long conversations instead of resending up to 1M tokens. Choose a larger **Context Size** in the model picker only when you need it.
+- **Codex:** WebSocket continuation sends only new items with `previous_response_id`, and `prompt_cache_key` keeps each conversation on a warm cache. Keep `modelBridge.codex.transport` on `auto`; `http` replays the full history for tool results.
+
+Further savings you can choose:
+
+| Setting | Effect |
+|---|---|
+| Lower **Thinking Effort** / **Reasoning Effort** in the model picker | Fewer reasoning tokens, usually the largest share of output |
+| `modelBridge.codex.textVerbosity`: `low` | Shorter Codex answers (some models accept only `medium`) |
+| `modelBridge.codex.webSearchContextSize`: `low` | Less search context added to Codex requests |
+| **Model Bridge: Codex: Enable Native Tool Search** | Codex loads tool schemas on demand instead of sending them all (see below) |
+| `modelBridge.claude.sessionContinuation`: `true` | Resumes compatible Claude Code sessions; Claude Code then keeps local session history |
+
+The Claude log (**Output → Model Bridge: Claude**) records input, cache-write, cache-read, and output token counts for every request, so you can check that cache reads dominate during agent sessions.
 
 ### Native Tool Search
 

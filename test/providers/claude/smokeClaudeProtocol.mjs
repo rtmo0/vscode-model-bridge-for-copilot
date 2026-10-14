@@ -30,6 +30,46 @@ try {
   assert.match(prompt, /<user>\nHello\n<\/user>/);
   assert.match(prompt, /<assistant>\nHi\n<\/assistant>/);
 
+  const blocks = protocol.buildClaudePromptBlocks([
+    { role: 'user', content: 'Hello' },
+    { role: 'assistant', content: 'Hi' }
+  ]);
+  assert.deepEqual(blocks, ['<user>\nHello\n</user>', '<assistant>\nHi\n</assistant>']);
+  assert.equal(blocks.join('\n\n'), prompt);
+  const streamInput = protocol.buildClaudeStreamJsonInput(blocks);
+  assert(streamInput.endsWith('\n'));
+  assert.equal(streamInput.trim().split('\n').length, 1);
+  assert.deepEqual(JSON.parse(streamInput), {
+    type: 'user',
+    message: { role: 'user', content: blocks.map((text) => ({ type: 'text', text })) },
+    parent_tool_use_id: null,
+    session_id: ''
+  });
+
+  assert.deepEqual(protocol.compactToolSchema({
+    $schema: 'http://json-schema.org/draft-07/schema#',
+    title: 'Args',
+    type: 'object',
+    properties: {
+      title: { type: 'string', title: 'Title', description: 'Kept', examples: ['x'] },
+      $schema: { type: 'string' },
+      options: { type: 'object', default: { title: 'literal' }, properties: { title: { type: 'string' } } }
+    },
+    items: [{ title: 'Item', type: 'string' }],
+    required: ['title'],
+    additionalProperties: false
+  }), {
+    type: 'object',
+    properties: {
+      title: { type: 'string', description: 'Kept' },
+      $schema: { type: 'string' },
+      options: { type: 'object', default: { title: 'literal' }, properties: { title: { type: 'string' } } }
+    },
+    items: [{ type: 'string' }],
+    required: ['title'],
+    additionalProperties: false
+  });
+
   const nonce = 'testnonce';
   const tools = [{ name: 'lookup', description: 'Look something up', inputSchema: { type: 'object' } }];
   const systemPrompt = protocol.buildClaudeSystemPrompt('Be helpful.', tools, nonce, true);

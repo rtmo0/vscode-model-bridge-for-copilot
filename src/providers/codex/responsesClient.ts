@@ -154,6 +154,7 @@ export interface StreamResponseTextOptions {
   toolMode?: vscode.LanguageModelChatToolMode;
   reasoning?: Reasoning;
   maxOutputTokens: number;
+  textVerbosity?: 'low' | 'medium' | 'high';
   token: vscode.CancellationToken;
   onTextDelta: (text: string) => void;
   onReasoningDelta?: (delta: ReasoningStreamDelta) => void;
@@ -1035,7 +1036,7 @@ function createRequestBuilderOptions(options: StreamResponseTextOptions): CodexR
     store: options.store,
     omitMaxOutputTokens: options.omitMaxOutputTokens,
     maxOutputTokens: options.maxOutputTokens,
-    textVerbosity: 'medium',
+    textVerbosity: options.textVerbosity ?? 'medium',
     includeEncryptedReasoning: true,
     protocolSettings: options.protocolSettings,
     clientIdentity: options.clientIdentity,

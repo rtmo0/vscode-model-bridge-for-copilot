@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as vscode from 'vscode';
 import {
+  buildClaudeStreamJsonInput,
   ClaudeStreamJsonParser,
   ClaudeToolProtocolParser,
   type ClaudeEffort,
@@ -28,8 +29,11 @@ export interface ClaudeCliRequest {
   model: string;
   effort: ClaudeEffort;
   contextSize: number;
-  prompt: string;
+  /** Conversation blocks sent as one stream-json user message; block boundaries enable prompt-cache prefix matches. */
+  promptBlocks: readonly string[];
   systemPrompt: string;
+  /** `minimal` replaces Claude Code's default system prompt; `claudeCode` appends to it without per-machine sections. */
+  systemPromptMode: ClaudeSystemPromptMode;
   markerNonce: string;
   allowedTools: ReadonlySet<string>;
   cwd?: string;
@@ -40,6 +44,8 @@ export interface ClaudeCliRequest {
   sessionId?: string;
   resumeSession?: boolean;
 }
+
+export type ClaudeSystemPromptMode = 'minimal' | 'claudeCode';
 
 const MAX_ERROR_LENGTH = 4_096;
 
@@ -137,12 +143,17 @@ async function runClaudeProcess(request: ClaudeCliRequest, systemPromptPath: str
     '--tools', '',
     '--permission-prompts', 'none',
     '--max-turns', '1',
+    '--input-format', 'stream-json',
     '--output-format', 'stream-json',
     '--verbose',
     '--include-partial-messages',
     '--effort', request.effort,
     '--autocompact', formatContextSizeArgument(request.contextSize),
-    '--append-system-prompt-file', systemPromptPath
+    // Claude Code's default prompt embeds cwd, environment, and git status; they change while
+    // an agent edits files and would invalidate the cached tool catalog and history after them.
+    ...(request.systemPromptMode === 'minimal'
+      ? ['--system-prompt-file', systemPromptPath]
+      : ['--append-system-prompt-file', systemPromptPath, '--exclude-dynamic-system-prompt-sections'])
   ];
   if (!request.persistSession) {
     args.push('--no-session-persistence');
@@ -250,7 +261,7 @@ async function runClaudeProcess(request: ClaudeCliRequest, systemPromptPath: str
           complete(error);
         }
       });
-      child.stdin.end(request.prompt, 'utf8');
+      child.stdin.end(buildClaudeStreamJsonInput(request.promptBlocks), 'utf8');
     });
   } finally {
     cancellation.dispose();

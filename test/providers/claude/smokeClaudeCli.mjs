@@ -27,16 +27,22 @@ if (args[0] === 'auth' && args[1] === 'status') {
   console.log(JSON.stringify({ authMethod: 'claude.ai', email: 'signed-in@example.test' }));
   process.exit(0);
 }
-let prompt = '';
-for await (const chunk of process.stdin) prompt += chunk;
+let input = '';
+for await (const chunk of process.stdin) input += chunk;
+const inputLines = input.split('\\n').filter(Boolean);
+const message = JSON.parse(inputLines[0]);
+const promptBlocks = message.message.content.map((block) => block.text);
 if (process.env.FAKE_CLAUDE_DELAY) {
   await new Promise(resolve => setTimeout(resolve, Number(process.env.FAKE_CLAUDE_DELAY)));
 }
-const flagIndex = args.indexOf('--append-system-prompt-file');
+const flagIndex = Math.max(args.indexOf('--system-prompt-file'), args.indexOf('--append-system-prompt-file'));
 const systemPromptPath = args[flagIndex + 1];
 writeFileSync(process.env.FAKE_CLAUDE_RECORD, JSON.stringify({
   args,
-  prompt,
+  inputLineCount: inputLines.length,
+  messageType: message.type,
+  messageRole: message.message.role,
+  promptBlocks,
   systemPromptPath,
   systemPrompt: readFileSync(systemPromptPath, 'utf8')
 }));
@@ -83,8 +89,9 @@ console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false
     model: 'sonnet',
     effort: 'xhigh',
     contextSize: 500000,
-    prompt: '<user>\nHello\n</user>',
+    promptBlocks: ['<system>\nRules\n</system>', '<user>\nHello\n</user>'],
     systemPrompt: 'System instructions',
+    systemPromptMode: 'minimal',
     markerNonce: 'nonce',
     allowedTools: new Set(),
     callbacks: { onText: (text) => output.push(text) },
@@ -97,7 +104,14 @@ console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false
   assert.equal(output.join(''), 'Hello from Claude');
 
   const record = JSON.parse(await readFile(recordPath, 'utf8'));
-  assert.equal(record.prompt, '<user>\nHello\n</user>');
+  assert.equal(record.inputLineCount, 1);
+  assert.equal(record.messageType, 'user');
+  assert.equal(record.messageRole, 'user');
+  assert.deepEqual(record.promptBlocks, ['<system>\nRules\n</system>', '<user>\nHello\n</user>']);
+  assert.deepEqual(record.args.slice(record.args.indexOf('--input-format'), record.args.indexOf('--input-format') + 2), ['--input-format', 'stream-json']);
+  assert(record.args.includes('--system-prompt-file'));
+  assert(!record.args.includes('--append-system-prompt-file'));
+  assert(!record.args.includes('--exclude-dynamic-system-prompt-sections'));
   assert.equal(record.systemPrompt, 'System instructions');
   assert(record.args.includes('--safe-mode'));
   assert(!record.args.includes('--bare'));
@@ -117,8 +131,9 @@ console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false
     model: 'default',
     effort: 'high',
     contextSize: 1000000,
-    prompt: 'New session',
+    promptBlocks: ['New session'],
     systemPrompt: 'System instructions',
+    systemPromptMode: 'claudeCode',
     markerNonce: 'nonce',
     allowedTools: new Set(),
     callbacks: { onText() {} },
@@ -129,6 +144,10 @@ console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false
   });
   const sessionRecord = JSON.parse(await readFile(recordPath, 'utf8'));
   assert(!sessionRecord.args.includes('--no-session-persistence'));
+  assert(sessionRecord.args.includes('--append-system-prompt-file'));
+  assert(sessionRecord.args.includes('--exclude-dynamic-system-prompt-sections'));
+  assert(!sessionRecord.args.includes('--system-prompt-file'));
+  assert.equal(sessionRecord.systemPrompt, 'System instructions');
   assert.deepEqual(sessionRecord.args.slice(sessionRecord.args.indexOf('--session-id'), sessionRecord.args.indexOf('--session-id') + 2), [
     '--session-id', '550e8400-e29b-41d4-a716-446655440000'
   ]);
@@ -142,8 +161,9 @@ console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false
     model: 'default',
     effort: 'high',
     contextSize: 100000,
-    prompt: 'Timeout',
+    promptBlocks: ['Timeout'],
     systemPrompt: 'System instructions',
+    systemPromptMode: 'minimal',
     markerNonce: 'nonce',
     allowedTools: new Set(),
     callbacks: { onText() {} },

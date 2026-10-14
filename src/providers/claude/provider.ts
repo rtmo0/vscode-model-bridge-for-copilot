@@ -3,12 +3,13 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import * as vscode from 'vscode';
-import { getClaudeCliStatus, streamClaudeResponse, type ClaudeCliStatus } from './cli';
+import { getClaudeCliStatus, streamClaudeResponse, type ClaudeCliStatus, type ClaudeSystemPromptMode } from './cli';
 import { ClaudeSessionStore } from './sessionStore';
 import {
-  buildClaudePrompt,
+  buildClaudePromptBlocks,
   buildClaudeSystemPrompt,
   CLAUDE_MODELS,
+  compactToolSchema,
   parseProviderModelId,
   toProviderModelId,
   type ClaudeEffort,
@@ -27,6 +28,7 @@ export interface ClaudeProviderConfig {
   requestTimeoutMs: number;
   enabledModels: string[];
   sessionContinuation: boolean;
+  systemPromptMode: ClaudeSystemPromptMode;
 }
 
 type RuntimeResponseOptions = vscode.ProvideLanguageModelChatResponseOptions & {
@@ -226,6 +228,7 @@ export class ClaudeModelProvider implements vscode.LanguageModelChatProvider, vs
       effort,
       contextSize,
       instructions: config.instructions,
+      systemPromptMode: config.systemPromptMode,
       toolRequired,
       tools
     };
@@ -259,8 +262,9 @@ export class ClaudeModelProvider implements vscode.LanguageModelChatProvider, vs
       model: selectedModel,
       effort,
       contextSize,
-      prompt: buildClaudePrompt(messagesToSend),
+      promptBlocks: buildClaudePromptBlocks(messagesToSend),
       systemPrompt: buildClaudeSystemPrompt(config.instructions, tools, markerNonce, toolRequired),
+      systemPromptMode: config.systemPromptMode,
       markerNonce,
       allowedTools: new Set(tools.map((tool) => tool.name)),
       cwd: workspaceFolder,
@@ -326,7 +330,11 @@ export class ClaudeModelProvider implements vscode.LanguageModelChatProvider, vs
       model: selectedModel,
       textCharacters,
       thinkingCharacters,
-      toolCallCount
+      toolCallCount,
+      inputTokens: usage.inputTokens,
+      cacheCreationInputTokens: usage.cacheCreationInputTokens,
+      cacheReadInputTokens: usage.cacheReadInputTokens,
+      outputTokens: usage.outputTokens
     });
   }
 
@@ -389,11 +397,12 @@ export function getClaudeProviderConfig(): ClaudeProviderConfig {
       'You are a helpful coding assistant integrated with VS Code. Follow the user’s instructions and use only tools explicitly provided by VS Code.'
     ),
     defaultEffort: normalizeEffort(config.get('defaultEffort', 'high'), 'high'),
-    defaultContextSize: normalizeContextSize(config.get('defaultContextSize', 1_000_000), 1_000_000),
-    maxOutputTokens: normalizePositiveInteger(config.get('maxOutputTokens', 128_000), 128_000),
+    defaultContextSize: normalizeContextSize(config.get('defaultContextSize', 200_000), 200_000),
+    maxOutputTokens: normalizePositiveInteger(config.get('maxOutputTokens', 32_000), 32_000),
     requestTimeoutMs: normalizeRequestTimeout(config.get('requestTimeoutSeconds', 600)) * 1_000,
     enabledModels: normalizeEnabledModels(config.get('enabledModels', CLAUDE_MODELS.map((model) => model.id))),
-    sessionContinuation: config.get('sessionContinuation', false)
+    sessionContinuation: config.get('sessionContinuation', false),
+    systemPromptMode: config.get<string>('systemPrompt', 'minimal') === 'claudeCode' ? 'claudeCode' : 'minimal'
   };
 }
 
@@ -536,14 +545,16 @@ function convertToolResultPart(part: unknown): string {
   return typeof part === 'string' ? part : safeJson(part);
 }
 
+// Sorted, annotation-free tools keep the system prompt byte-stable and smaller across requests.
 function normalizeTools(tools: readonly vscode.LanguageModelChatTool[]): ClaudeToolDefinition[] {
   return tools
     .filter((tool) => typeof tool.name === 'string' && tool.name.trim().length > 0)
     .map((tool) => ({
       name: tool.name,
       description: tool.description || '',
-      inputSchema: isRecord(tool.inputSchema) ? tool.inputSchema : { type: 'object' }
-    }));
+      inputSchema: isRecord(tool.inputSchema) ? compactToolSchema(tool.inputSchema) as object : { type: 'object' }
+    }))
+    .sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
 }
 
 function createMarkerNonce(): string {
