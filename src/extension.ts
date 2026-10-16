@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { activateClaude } from './providers/claude/integration';
 import { activateCodex } from './providers/codex/integration';
 import { activateLmStudio } from './providers/lmstudio/integration';
+import { SUPPORT_URL } from './providers/managementMenu';
 import { migrateLegacySettings } from './settingsMigration';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
@@ -9,7 +10,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(
     output,
     vscode.commands.registerCommand('modelBridge.manage', () => showProviderManager()),
-    vscode.commands.registerCommand('modelBridge.doctor', () => showDiagnosticsManager())
+    vscode.commands.registerCommand('modelBridge.doctor', () => showDiagnosticsManager()),
+    vscode.commands.registerCommand('modelBridge.support', () => vscode.env.openExternal(vscode.Uri.parse(SUPPORT_URL)))
   );
 
   try {
@@ -40,7 +42,9 @@ async function showProviderManager(): Promise<void> {
   const selection = await vscode.window.showQuickPick([
     { label: '$(sparkle) Claude', description: 'Claude Code subscription sign-in', command: 'modelBridge.claude.manage' },
     { label: '$(cloud) Codex', description: 'ChatGPT Codex sign-in and Responses API', command: 'modelBridge.codex.manage' },
-    { label: '$(server) LM Studio', description: 'Local OpenAI-compatible models', command: 'modelBridge.lmstudio.manage' }
+    { label: '$(server) LM Studio', description: 'Local OpenAI-compatible models', command: 'modelBridge.lmstudio.manage' },
+    { label: '', kind: vscode.QuickPickItemKind.Separator, command: '' },
+    { label: '$(heart) Support the Project', description: 'Buy Me a Coffee', command: 'modelBridge.support' }
   ], { title: 'Model Bridge Providers', placeHolder: 'Choose a provider to manage' });
   if (selection) await vscode.commands.executeCommand(selection.command);
 }

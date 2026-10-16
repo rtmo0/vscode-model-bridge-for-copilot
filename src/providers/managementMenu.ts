@@ -12,10 +12,17 @@ export interface ManagementMenuSection {
   actions: readonly ManagementMenuAction[];
 }
 
+export const SUPPORT_URL = 'https://buymeacoffee.com/rtmo0';
+
+const SUPPORT_SECTION: ManagementMenuSection = {
+  label: 'Support',
+  actions: [{ icon: 'heart', label: 'Support the Project', description: 'Buy Me a Coffee', command: 'modelBridge.support' }]
+};
+
 /** Shared provider "Manage" picker so Claude, Codex, and LM Studio menus look and behave the same. */
 export async function showManagementMenu(title: string, sections: readonly ManagementMenuSection[]): Promise<void> {
   type Item = vscode.QuickPickItem & { command?: string };
-  const items: Item[] = sections.flatMap((section) => [
+  const items: Item[] = [...sections, SUPPORT_SECTION].flatMap((section) => [
     { label: section.label, kind: vscode.QuickPickItemKind.Separator },
     ...section.actions.map((action) => ({
       label: `$(${action.icon}) ${action.label}`,

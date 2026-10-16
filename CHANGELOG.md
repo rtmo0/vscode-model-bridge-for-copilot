@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.0
+
+### All providers
+
+- New **Model Bridge: Support the Project** command and a **Support the Project** item in the provider and Manage menus, which open Buy Me a Coffee. The extension page in VS Code and the Marketplace now shows a **Sponsor** button.
+
 ## 1.1.0
 
 ### Claude
