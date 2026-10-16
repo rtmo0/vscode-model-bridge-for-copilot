@@ -44,7 +44,7 @@ async function showProviderManager(): Promise<void> {
     { label: '$(cloud) Codex', description: 'ChatGPT Codex sign-in and Responses API', command: 'modelBridge.codex.manage' },
     { label: '$(server) LM Studio', description: 'Local OpenAI-compatible models', command: 'modelBridge.lmstudio.manage' },
     { label: '', kind: vscode.QuickPickItemKind.Separator, command: '' },
-    { label: '$(heart) Support the Project', description: 'Buy Me a Coffee', command: 'modelBridge.support' }
+    { label: '$(heart) Support the Project', description: 'Boosty', command: 'modelBridge.support' }
   ], { title: 'Model Bridge Providers', placeHolder: 'Choose a provider to manage' });
   if (selection) await vscode.commands.executeCommand(selection.command);
 }

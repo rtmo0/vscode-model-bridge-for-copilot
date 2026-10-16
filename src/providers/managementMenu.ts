@@ -12,11 +12,11 @@ export interface ManagementMenuSection {
   actions: readonly ManagementMenuAction[];
 }
 
-export const SUPPORT_URL = 'https://buymeacoffee.com/rtmo0';
+export const SUPPORT_URL = 'https://boosty.to/rtm00';
 
 const SUPPORT_SECTION: ManagementMenuSection = {
   label: 'Support',
-  actions: [{ icon: 'heart', label: 'Support the Project', description: 'Buy Me a Coffee', command: 'modelBridge.support' }]
+  actions: [{ icon: 'heart', label: 'Support the Project', description: 'Boosty', command: 'modelBridge.support' }]
 };
 
 /** Shared provider "Manage" picker so Claude, Codex, and LM Studio menus look and behave the same. */

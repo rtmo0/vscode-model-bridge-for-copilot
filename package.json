@@ -2,7 +2,7 @@
   "name": "model-bridge-for-copilot",
   "displayName": "Model Bridge for Copilot - Claude, Codex & Local LLMs",
   "description": "Use Claude subscriptions, ChatGPT Codex, and local LM Studio models in native VS Code Chat and Agent mode.",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "publisher": "samarin-aa-aka-rtm00",
   "icon": "assets/model-bridge-for-copilot.png",
   "license": "MIT",
@@ -21,7 +21,7 @@
     "url": "https://github.com/rtmo0/vscode-model-bridge-for-copilot/issues"
   },
   "sponsor": {
-    "url": "https://buymeacoffee.com/rtmo0"
+    "url": "https://boosty.to/rtm00"
   },
   "qna": "https://github.com/rtmo0/vscode-model-bridge-for-copilot/discussions",
   "engines": {
@@ -141,7 +141,7 @@
       },
       {
         "command": "modelBridge.support",
-        "title": "Support the Project (Buy Me a Coffee)",
+        "title": "Support the Project on Boosty",
         "category": "Model Bridge"
       },
       {

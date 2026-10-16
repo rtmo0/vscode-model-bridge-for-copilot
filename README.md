@@ -5,7 +5,7 @@
 
   <p><strong>Claude subscriptions, ChatGPT Codex, and local LM Studio models in native VS Code Chat.</strong></p>
 
-  <a href="https://buymeacoffee.com/rtmo0"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-FFDD00?logo=buymeacoffee&amp;logoColor=black" alt="Buy Me a Coffee"></a>
+  <a href="https://boosty.to/rtm00"><img src="https://img.shields.io/badge/Boosty-support-F15F2C?logo=boosty&amp;logoColor=white" alt="Support on Boosty"></a>
 </div>
 
 Model Bridge for Copilot is a multi-provider VS Code Language Model Provider. It keeps the native Chat and Agent experience while letting you choose between a signed-in Claude Code account, ChatGPT Codex, and models running locally in LM Studio.
@@ -146,7 +146,7 @@ Press `F5` to launch an Extension Development Host. Release details are in [docs
 
 ## Support
 
-Model Bridge for Copilot is free and open source. If it saves you time or subscription usage, you can support its development on [Buy Me a Coffee](https://buymeacoffee.com/rtmo0), or with **Model Bridge: Support the Project** in the Command Palette. Bug reports and pull requests are just as welcome.
+Model Bridge for Copilot is free and open source. If it saves you time or subscription usage, you can support its development on [Boosty](https://boosty.to/rtm00), or with **Model Bridge: Support the Project** in the Command Palette. Bug reports and pull requests are just as welcome.
 
 ## License and attribution
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.1
+
+### All providers
+
+- **Model Bridge: Support the Project on Boosty**, the menu item, and the **Sponsor** button now open Boosty instead of Buy Me a Coffee.
+
 ## 1.3.0
 
 ### All providers
