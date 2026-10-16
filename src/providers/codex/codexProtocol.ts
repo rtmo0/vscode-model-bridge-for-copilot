@@ -46,6 +46,8 @@ export interface CodexRequestIdentity {
   parentThreadId?: string;
   parentTurnId?: string;
   rootTurnId?: string;
+  /** Conversation-scoped `prompt_cache_key`; falls back to `threadId` when absent. */
+  promptCacheKey?: string;
 }
 
 export interface CodexToolFunctionMetadata {

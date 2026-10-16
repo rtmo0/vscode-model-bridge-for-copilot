@@ -147,7 +147,7 @@ async function runClaudeProcess(request: ClaudeCliRequest, systemPromptPath: str
     '--output-format', 'stream-json',
     '--verbose',
     '--include-partial-messages',
-    '--effort', request.effort,
+    ...(request.effort === 'auto' ? [] : ['--effort', request.effort]),
     '--autocompact', formatContextSizeArgument(request.contextSize),
     // Claude Code's default prompt embeds cwd, environment, and git status; they change while
     // an agent edits files and would invalidate the cached tool catalog and history after them.

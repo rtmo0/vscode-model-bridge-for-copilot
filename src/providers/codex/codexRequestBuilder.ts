@@ -111,7 +111,7 @@ export function buildCodexResponsesRequestWithMetrics(
     : include.length > 0 ? { include } : {};
   const identityFields = options.compatibilityEnabled && options.identity
     ? {
-        prompt_cache_key: options.identity.threadId,
+        prompt_cache_key: options.identity.promptCacheKey ?? options.identity.threadId,
         client_metadata: metadata
       }
     : {};

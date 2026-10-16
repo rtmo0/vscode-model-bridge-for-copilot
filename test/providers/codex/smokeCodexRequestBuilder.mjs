@@ -94,6 +94,13 @@ try {
   const firstBuild = buildCodexResponsesRequestWithMetrics(base);
   const secondBuild = buildCodexResponsesRequestWithMetrics(base);
   assertEqual(request.prompt_cache_key, identity.threadId, 'stable prompt cache key');
+  const conversationKeyRequest = buildCodexResponsesRequest({
+    ...base,
+    identity: { ...identity, promptCacheKey: '66666666-6666-4666-8666-666666666666' }
+  });
+  assertEqual(conversationKeyRequest.prompt_cache_key, '66666666-6666-4666-8666-666666666666', 'conversation prompt cache key overrides thread key');
+  assertEqual(conversationKeyRequest.client_metadata.thread_id, identity.threadId, 'thread metadata keeps the thread id');
+  assertEqual(areCodexRequestsIncrementallyCompatible(request, conversationKeyRequest), true, 'prompt cache key is excluded from the request fingerprint');
   assertEqual(request.client_metadata.turn_id, identity.turnId, 'turn metadata');
   assertEqual(JSON.parse(request.client_metadata['x-codex-turn-metadata']).turn_started_at_unix_ms, base.turnStartedAtUnixMs, 'turn start metadata');
   assertEqual(request.parallel_tool_calls, true, 'parallel tools');

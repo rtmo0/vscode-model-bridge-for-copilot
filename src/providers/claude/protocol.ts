@@ -1,4 +1,5 @@
-export type ClaudeEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+/** `auto` omits `--effort`, so Claude Code applies its own configured or default effort. */
+export type ClaudeEffort = 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 export interface ClaudeToolDefinition {
   name: string;

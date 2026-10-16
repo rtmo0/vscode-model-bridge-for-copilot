@@ -92,9 +92,10 @@ Settings under `anthropicForCopilot.*` and `codexModelProvider.*` are copied to 
 
 Claude and ChatGPT subscriptions are limited by tokens, and agent sessions resend the conversation with every tool call. Model Bridge keeps those requests cheap by default:
 
-- **Claude:** history is sent as one content block per chat message, the system prompt and tool catalog stay byte-stable between requests (no cwd, environment, or git status sections; tools sorted, schema annotations removed), so each tool step reads the earlier conversation from the prompt cache instead of rewriting it.
+- **Claude:** history is sent as one content block per chat message, the system prompt and tool catalog stay byte-stable between requests (no cwd, environment, or git status sections; tools sorted, schema annotations removed), so each tool step reads the earlier conversation from the prompt cache instead of rewriting it. When VS Code adds or removes tools mid-conversation (for example when a Virtual Tool group activates), the change is appended as a catalog update instead of rewriting the catalog in front of the cached history.
+- **Claude:** thinking effort defaults to **Claude Code Default**, which uses the `effortLevel` configured in Claude Code, as the official extension does.
 - **Claude:** the default context size is 200K with a 32K output reservation, so Copilot summarizes long conversations instead of resending up to 1M tokens. Choose a larger **Context Size** in the model picker only when you need it.
-- **Codex:** WebSocket continuation sends only new items with `previous_response_id`, and `prompt_cache_key` keeps each conversation on a warm cache. Keep `modelBridge.codex.transport` on `auto`; `http` replays the full history for tool results.
+- **Codex:** WebSocket continuation sends only new items with `previous_response_id`, and `prompt_cache_key` stays the same for the whole conversation, including after forks, edited messages, and window reloads. When the history must be replayed in full (HTTP transport or a dropped WebSocket), the replay keeps the encrypted reasoning of the current tool loop. Keep `modelBridge.codex.transport` on `auto`; `http` replays the full history for tool results.
 
 Further savings you can choose:
 
@@ -104,7 +105,7 @@ Further savings you can choose:
 | `modelBridge.codex.textVerbosity`: `low` | Shorter Codex answers (some models accept only `medium`) |
 | `modelBridge.codex.webSearchContextSize`: `low` | Less search context added to Codex requests |
 | **Model Bridge: Codex: Enable Native Tool Search** | Codex loads tool schemas on demand instead of sending them all (see below) |
-| `modelBridge.claude.sessionContinuation`: `true` | Resumes compatible Claude Code sessions; Claude Code then keeps local session history |
+| `modelBridge.claude.sessionContinuation`: `true` | Resumes compatible Claude Code sessions, which keeps Claude's thinking across tool steps instead of re-deriving it; Claude Code then keeps local session history |
 
 The Claude log (**Output → Model Bridge: Claude**) records input, cache-write, cache-read, and output token counts for every request, so you can check that cache reads dominate during agent sessions.
 

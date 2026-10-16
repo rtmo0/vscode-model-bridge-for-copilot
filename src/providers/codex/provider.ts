@@ -32,7 +32,7 @@ import {
 import { ResponseBranchStore } from './responseBranchStore';
 import { getApiCredentials } from './secrets';
 import type { CodexAuthManager } from './auth/codexAuthManager';
-import { CodexIdentityManager, inputStartsNewTurn } from './codexIdentity';
+import { CodexIdentityManager, derivePromptCacheKey, inputStartsNewTurn } from './codexIdentity';
 import { getCodexCompatibilityProfile, type CodexRequestIdentity } from './codexProtocol';
 import { resolveRequestIdentity } from './codexRequestIdentity';
 import { resetCodexFetchCapabilities } from './codexFetchAdapter';
@@ -133,6 +133,9 @@ const WEB_SEARCH_STATUS_DETAIL_GRACE_MS = 300;
 // gate: five consecutive store:false tool loops completed with a matching
 // previous_response_id and a single incremental function_call_output.
 const TOOL_OUTPUT_CONTINUATION_ENABLED = true;
+// Matches the tool count at which the `auto` Native Tool Search policy engages without large schemas.
+const NATIVE_TOOL_SEARCH_HINT_MIN_TOOLS = 24;
+const NATIVE_TOOL_SEARCH_HINT_DISMISSED_KEY = 'modelBridge.codex.nativeToolSearchHintDismissed';
 
 const NON_CANCELLABLE_TOKEN: vscode.CancellationToken = {
   isCancellationRequested: false,
@@ -192,6 +195,7 @@ export class CodexModelProvider implements vscode.LanguageModelChatProvider {
   });
   private lastConnectionConfigurationKey?: string;
   private lastVirtualToolFallbackSignature?: string;
+  private nativeToolSearchHintShown = false;
   private readonly logger: CodexLogger;
 
   constructor(
@@ -385,6 +389,13 @@ export class CodexModelProvider implements vscode.LanguageModelChatProvider {
     } else {
       this.lastVirtualToolFallbackSignature = undefined;
     }
+    if (config.nativeToolSearch === 'disabled'
+      && compatibilityProfile.enabled
+      && virtualToolPlaceholderNames.length === 0
+      && selectedClientTools.length >= NATIVE_TOOL_SEARCH_HINT_MIN_TOOLS
+      && canUseNativeToolSearch(selectedModel.requestModel, nativeToolSearchKey)) {
+      this.recommendNativeToolSearch(selectedClientTools.length);
+    }
     recordNativeToolSearchRuntimeStatus({
       model: selectedModel.requestModel,
       setting: config.nativeToolSearch,
@@ -543,14 +554,14 @@ export class CodexModelProvider implements vscode.LanguageModelChatProvider {
       && (!requiresFullInputForToolOutput || shouldAttemptToolOutputContinuation);
     const canonicalReplaySnapshot = reusableBranch?.state?.continuation;
     const canonicalReplayAppendedInput = reusableBranch?.comparison.appendedInput ?? [];
-    const fullReplayInput = toolPlan.mode === 'native-hosted'
-      ? buildCanonicalReplayInput({
-          previousSnapshot: canonicalReplaySnapshot,
-          convertedInput: input,
-          appendedInput: canonicalReplayAppendedInput,
-          catalogHash: toolPlan.catalogHash
-        })
-      : input;
+    // VS Code history carries no reasoning items, so a full replay rebuilt from it would drop the
+    // encrypted reasoning of the current tool loop and diverge from the prefix the backend cached.
+    const fullReplayInput = buildCanonicalReplayInput({
+      previousSnapshot: canonicalReplaySnapshot,
+      convertedInput: input,
+      appendedInput: canonicalReplayAppendedInput,
+      catalogHash: toolPlan.catalogHash
+    });
     const recoveryReplayInput = markerCanonicalReplayInput ?? fullReplayInput;
     const initialRequestInput = usePreviousResponseId
       ? appendedInput
@@ -564,13 +575,19 @@ export class CodexModelProvider implements vscode.LanguageModelChatProvider {
     let legacyFallbackReplayInput: ResponsesInputMessage[] | undefined;
     let completedResponseId: string | undefined;
     const replayResponseItems: unknown[] = [];
-    const requestIdentity = await this.resolveRequestIdentity(
+    const resolvedIdentity = await this.resolveRequestIdentity(
       reusableBranch?.state,
       reuseMissDiagnostic?.comparison.kind === 'fork' && reuseMissDiagnostic.comparison.matchedPrefixCount > 0
         ? reuseMissDiagnostic.state
         : undefined,
       reusableBranch?.comparison.appendedInput ?? input
     );
+    // A new thread per reuse miss would also move prompt_cache_key and lose the cached prefix,
+    // so the key follows the conversation root rather than the thread.
+    const promptCacheKey = resolvedIdentity.promptCacheKey ?? derivePromptCacheKey(authIdentity, input);
+    const requestIdentity: CodexRequestIdentity = promptCacheKey
+      ? { ...resolvedIdentity, promptCacheKey }
+      : resolvedIdentity;
     latency.mark('identityResolved');
     let branchState: CodexBranchState = {
       identity: {
@@ -580,7 +597,8 @@ export class CodexModelProvider implements vscode.LanguageModelChatProvider {
         windowId: requestIdentity.windowId,
         parentThreadId: requestIdentity.parentThreadId,
         parentTurnId: requestIdentity.parentTurnId,
-        rootTurnId: requestIdentity.rootTurnId
+        rootTurnId: requestIdentity.rootTurnId,
+        ...(requestIdentity.promptCacheKey ? { promptCacheKey: requestIdentity.promptCacheKey } : {})
       },
       turn: {
         id: requestIdentity.turnId,
@@ -1389,11 +1407,9 @@ export class CodexModelProvider implements vscode.LanguageModelChatProvider {
         identity: requestIdentity,
         input: legacyFallbackReplayInput ?? recordedInput,
       });
-      const fullRequest = isMarkerContinuation
+      const fullRequest = isMarkerContinuation || legacyFallbackReplayInput
         ? builtFullRequest
-        : toolPlan.mode === 'native-hosted'
-        ? createCanonicalReplayRequest(builtFullRequest, fullReplayInput)
-        : builtFullRequest;
+        : createCanonicalReplayRequest(builtFullRequest, fullReplayInput);
       branchState = {
         ...branchState,
         continuation: createCodexContinuationSnapshot(
@@ -1442,6 +1458,27 @@ export class CodexModelProvider implements vscode.LanguageModelChatProvider {
       boundaryDrainDurationMs: providerTail.context.boundaryDrainDurationMs ?? null,
       continuationSnapshotMs: providerTail.context.continuationSnapshotMs ?? null,
       continuationStoreMs: providerTail.context.continuationStoreMs ?? null
+    });
+  }
+
+  // Offered once per window; enabling goes through the existing command, whose modal
+  // confirmation explains the global Virtual Tools change that also affects other providers.
+  private recommendNativeToolSearch(toolCount: number): void {
+    const globalState = (this.context as vscode.ExtensionContext & { globalState?: vscode.Memento }).globalState;
+    if (this.nativeToolSearchHintShown || globalState?.get<boolean>(NATIVE_TOOL_SEARCH_HINT_DISMISSED_KEY) === true) {
+      return;
+    }
+    this.nativeToolSearchHintShown = true;
+    void vscode.window.showInformationMessage(
+      `Copilot sends ${toolCount} tool definitions with every Codex request. Native Tool Search lets Codex load most of them on demand, which reduces input usage.`,
+      'Enable Native Tool Search…',
+      'Don’t Show Again'
+    ).then((choice) => {
+      if (choice === 'Enable Native Tool Search…') {
+        void vscode.commands.executeCommand('modelBridge.codex.enableNativeToolSearch');
+      } else if (choice === 'Don’t Show Again') {
+        void globalState?.update(NATIVE_TOOL_SEARCH_HINT_DISMISSED_KEY, true);
+      }
     });
   }
 

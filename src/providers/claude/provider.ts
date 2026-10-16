@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import * as vscode from 'vscode';
 import { getClaudeCliStatus, streamClaudeResponse, type ClaudeCliStatus, type ClaudeSystemPromptMode } from './cli';
 import { ClaudeSessionStore } from './sessionStore';
+import { ClaudeToolCatalogStore } from './toolCatalog';
 import {
   buildClaudePromptBlocks,
   buildClaudeSystemPrompt,
@@ -67,7 +68,7 @@ type VSCodeWithThinkingPart = typeof vscode & {
   LanguageModelThinkingPart?: new (value: string | string[], id?: string) => vscode.LanguageModelResponsePart;
 };
 
-const CLAUDE_EFFORTS: readonly ClaudeEffort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
+const CLAUDE_EFFORTS: readonly ClaudeEffort[] = ['auto', 'low', 'medium', 'high', 'xhigh', 'max'];
 const CLAUDE_CONTEXT_SIZES = [100_000, 200_000, 500_000, 1_000_000] as const;
 const USAGE_DATA_PART_MIME = 'usage';
 const READY_STATUS_TTL_MS = 60_000;
@@ -78,6 +79,7 @@ const MODEL_ACCESS_REJECTION = /requires usage credits|unavailable for this acco
 export class ClaudeModelProvider implements vscode.LanguageModelChatProvider, vscode.Disposable {
   private readonly modelsChanged = new vscode.EventEmitter<void>();
   private readonly sessionStore = new ClaudeSessionStore();
+  private readonly toolCatalogStore = new ClaudeToolCatalogStore();
   // Stable across requests so the system prompt stays cacheable and resumed sessions
   // keep recognizing tool markers already present in their history.
   private markerNonce = createMarkerNonce();
@@ -92,12 +94,14 @@ export class ClaudeModelProvider implements vscode.LanguageModelChatProvider, vs
 
   dispose(): void {
     this.sessionStore.clear();
+    this.toolCatalogStore.clear();
     this.modelsChanged.dispose();
   }
 
   refresh(): void {
     void this.state?.update(UNAVAILABLE_MODELS_KEY, undefined);
     this.sessionStore.clear();
+    this.toolCatalogStore.clear();
     this.markerNonce = createMarkerNonce();
     this.statusCache = undefined;
     this.modelsChanged.fire();
@@ -221,7 +225,8 @@ export class ClaudeModelProvider implements vscode.LanguageModelChatProvider, vs
     const contextSize = resolveContextSizeOption(runtimeOptions, config.defaultContextSize);
     const tools = normalizeTools(options.tools ?? []);
     const markerNonce = this.markerNonce;
-    const promptMessages = messages.map(convertMessage);
+    const catalogPlan = this.toolCatalogStore.plan(messages.map(convertMessage), tools);
+    const promptMessages = catalogPlan.messages;
     const toolRequired = options.toolMode === vscode.LanguageModelChatToolMode.Required && tools.length > 0;
     const sessionEnvelope = {
       model: selectedModel,
@@ -230,7 +235,7 @@ export class ClaudeModelProvider implements vscode.LanguageModelChatProvider, vs
       instructions: config.instructions,
       systemPromptMode: config.systemPromptMode,
       toolRequired,
-      tools
+      tools: catalogPlan.catalogTools
     };
     const continuation = config.sessionContinuation
       ? this.sessionStore.resolve(promptMessages, sessionEnvelope)
@@ -253,6 +258,7 @@ export class ClaudeModelProvider implements vscode.LanguageModelChatProvider, vs
       incrementalMessageCount: messagesToSend.length,
       sessionContinuation: continuation ? 'resumed' : config.sessionContinuation ? 'new' : 'disabled',
       toolCount: tools.length,
+      toolCatalogUpdateCount: catalogPlan.updateCount,
       toolRequired,
       hasWorkspace: Boolean(workspaceFolder)
     });
@@ -263,7 +269,7 @@ export class ClaudeModelProvider implements vscode.LanguageModelChatProvider, vs
       effort,
       contextSize,
       promptBlocks: buildClaudePromptBlocks(messagesToSend),
-      systemPrompt: buildClaudeSystemPrompt(config.instructions, tools, markerNonce, toolRequired),
+      systemPrompt: buildClaudeSystemPrompt(config.instructions, catalogPlan.catalogTools, markerNonce, toolRequired),
       systemPromptMode: config.systemPromptMode,
       markerNonce,
       allowedTools: new Set(tools.map((tool) => tool.name)),
@@ -396,7 +402,7 @@ export function getClaudeProviderConfig(): ClaudeProviderConfig {
       'instructions',
       'You are a helpful coding assistant integrated with VS Code. Follow the user’s instructions and use only tools explicitly provided by VS Code.'
     ),
-    defaultEffort: normalizeEffort(config.get('defaultEffort', 'high'), 'high'),
+    defaultEffort: normalizeEffort(config.get('defaultEffort', 'auto'), 'auto'),
     defaultContextSize: normalizeContextSize(config.get('defaultContextSize', 200_000), 200_000),
     maxOutputTokens: normalizePositiveInteger(config.get('maxOutputTokens', 32_000), 32_000),
     requestTimeoutMs: normalizeRequestTimeout(config.get('requestTimeoutSeconds', 600)) * 1_000,
@@ -424,8 +430,9 @@ export function buildModelConfigurationSchema(config: ClaudeProviderConfig): Mod
         type: 'string',
         title: 'Thinking Effort',
         enum: CLAUDE_EFFORTS,
-        enumItemLabels: ['Low', 'Medium', 'High', 'Extra High', 'Maximum'],
+        enumItemLabels: ['Claude Code Default', 'Low', 'Medium', 'High', 'Extra High', 'Maximum'],
         enumDescriptions: [
+          'Use the effort configured in Claude Code, as the official extension does.',
           'Fastest responses with minimal extended thinking.',
           'Balanced speed and reasoning.',
           'Deeper reasoning for coding tasks.',

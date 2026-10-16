@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.1.0
+
+### Claude
+
+- Lower account usage when VS Code changes the tool list mid-conversation (Virtual Tool groups, MCP servers). The system-prompt tool catalog now stays fixed per conversation and additions, removals, or changed definitions are appended as a catalog update at the point where they happened, so the cached history after the catalog is no longer rewritten.
+- New **Claude Code Default** thinking effort, now the default for `modelBridge.claude.defaultEffort`. It omits `--effort` so Claude Code applies its own `effortLevel`, matching the official extension. Choose an explicit effort in the model picker to override it.
+- Session continuation now tolerates whitespace differences in replayed assistant turns, so compatible follow-ups resume the Claude Code session (and keep its thinking) more often.
+
+### Codex
+
+- Full-history replays (HTTP transport, or a dropped WebSocket) now keep the encrypted reasoning of the current tool loop in every tool mode, not only with Native Tool Search, so the model continues its reasoning instead of re-deriving it. Reasoning items without encrypted content, which the backend ignores, are no longer sent.
+- `prompt_cache_key` is now one key per conversation, derived from the conversation root and the signed-in account, as the official Codex client does, instead of a new random key after every continuation miss, fork, or window reload.
+- Requests with many tools show a one-time suggestion to enable Native Tool Search. Enabling still goes through the existing confirmation, which explains the effect on other chat models.
+
 ## 1.0.0
 
 ### Claude

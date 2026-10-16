@@ -94,8 +94,18 @@ function isMessagePrefix(
     return false;
   }
   return prefix.every((message, index) => (
-    message.role === messages[index].role && message.content === messages[index].content
+    message.role === messages[index].role
+    && comparableContent(message) === comparableContent(messages[index])
   ));
+}
+
+// The recorded assistant turn is rebuilt from streamed segments, while VS Code replays it from
+// its own text and tool-call parts, which may split or trim whitespace differently. The session
+// already holds the model's exact output, so assistant turns compare without whitespace; other
+// roles stay exact apart from line endings.
+function comparableContent(message: ClaudePromptMessage): string {
+  const content = message.content.replace(/\r\n?/g, '\n');
+  return message.role === 'assistant' ? content.replace(/\s+/g, '') : content;
 }
 
 function cloneMessage(message: ClaudePromptMessage): ClaudePromptMessage {

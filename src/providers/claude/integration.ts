@@ -279,6 +279,7 @@ async function quickConfigure(): Promise<boolean> {
   }
 
   const effort = await vscode.window.showQuickPick([
+    { label: 'Claude Code Default', value: 'auto' },
     { label: 'Low', value: 'low' },
     { label: 'Medium', value: 'medium' },
     { label: 'High', value: 'high' },

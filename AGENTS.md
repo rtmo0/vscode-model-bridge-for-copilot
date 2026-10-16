@@ -4,7 +4,7 @@
 
 - `src/extension.ts`: unified VS Code activation, isolated per-provider activation, and provider management.
 - `src/settingsMigration.ts`: one-time copy of legacy `anthropicForCopilot.*` and `codexModelProvider.*` settings.
-- `src/providers/claude/`: Claude Code provider (`provider.ts`), process lifecycle (`cli.ts`), stream protocol (`protocol.ts`), optional continuation (`sessionStore.ts`), and usage display (`usageStatusBar.ts`).
+- `src/providers/claude/`: Claude Code provider (`provider.ts`), process lifecycle (`cli.ts`), stream protocol (`protocol.ts`), optional continuation (`sessionStore.ts`), append-only tool catalog (`toolCatalog.ts`), and usage display (`usageStatusBar.ts`).
 - `src/providers/codex/`: full Codex provider, authentication, Responses transports, model discovery, usage, and tools. `provider.ts` owns the request flow; replay projection lives in `providerReplay.ts`, model alias/availability in `providerModelResolution.ts`, response parts and option helpers in `providerSupport.ts`, and tool-call latency/continuation tracking in `toolCallTracking.ts`.
 - `src/providers/lmstudio/`: local LM Studio provider (`provider.ts`), OpenAI-compatible SSE handling (`protocol.ts`), and commands (`integration.ts`).
 - `test/smokeManifest.mjs`: manifest and command registration checks; `test/providers/<provider>/` contains provider-specific smoke suites.

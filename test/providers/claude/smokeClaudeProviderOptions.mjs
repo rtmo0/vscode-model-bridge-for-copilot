@@ -50,13 +50,17 @@ try {
     maxOutputTokens: 128000
   };
   const schema = provider.buildModelConfigurationSchema(config);
-  assert.deepEqual(schema.properties.reasoningEffort.enum, ['low', 'medium', 'high', 'xhigh', 'max']);
+  assert.deepEqual(schema.properties.reasoningEffort.enum, ['auto', 'low', 'medium', 'high', 'xhigh', 'max']);
+  assert.equal(schema.properties.reasoningEffort.enumItemLabels.length, schema.properties.reasoningEffort.enum.length);
+  assert.equal(schema.properties.reasoningEffort.enumDescriptions.length, schema.properties.reasoningEffort.enum.length);
   assert.equal(schema.properties.reasoningEffort.default, 'high');
   assert.deepEqual(schema.properties.contextSize.enum, [100000, 200000, 500000, 1000000]);
   assert.equal(schema.properties.contextSize.default, 1000000);
 
   assert.equal(provider.resolveEffortOption({ modelOptions: { reasoningEffort: 'xhigh' } }, 'high'), 'xhigh');
   assert.equal(provider.resolveEffortOption({ modelOptions: { reasoningEffort: 'invalid' } }, 'high'), 'high');
+  assert.equal(provider.resolveEffortOption({ modelOptions: { reasoningEffort: 'auto' } }, 'high'), 'auto');
+  assert.equal(provider.resolveEffortOption({}, 'auto'), 'auto');
   assert.equal(provider.resolveContextSizeOption({ modelOptions: { contextSize: 200000 } }, 1000000), 200000);
   assert.equal(provider.resolveContextSizeOption({ configuration: { contextSize: 123 } }, 1000000), 1000000);
   assert.deepEqual(

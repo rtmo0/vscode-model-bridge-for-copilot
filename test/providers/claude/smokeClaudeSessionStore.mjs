@@ -34,6 +34,33 @@ try {
     appendedMessages: [{ role: 'user', content: 'Continue' }]
   });
 
+  // VS Code may replay the assistant turn with different whitespace between text and tool-call parts.
+  store.record('session-ws', [
+    { role: 'user', content: 'Read it' },
+    { role: 'assistant', content: 'Reading.\n[Tool call c1: read]\n{"path":"a"}' }
+  ], envelope, 1000);
+  assert.deepEqual(store.resolve([
+    { role: 'user', content: 'Read it' },
+    { role: 'assistant', content: 'Reading.\n\n[Tool call c1: read]\n{"path":"a"}\n' },
+    { role: 'user', content: '[Tool result for c1]\nok' }
+  ], envelope, 1200), {
+    sessionId: 'session-ws',
+    appendedMessages: [{ role: 'user', content: '[Tool result for c1]\nok' }]
+  });
+  // User content stays exact apart from line endings.
+  assert.equal(store.resolve([
+    { role: 'user', content: 'Read  it' },
+    { role: 'assistant', content: 'Reading.\n[Tool call c1: read]\n{"path":"a"}' },
+    { role: 'user', content: 'Next' }
+  ], envelope, 1200), undefined);
+  assert.equal(store.resolve([
+    { role: 'user', content: 'Read it' },
+    { role: 'assistant', content: 'Reading.\r\n[Tool call c1: read]\r\n{"path":"a"}' },
+    { role: 'user', content: 'Next' }
+  ], envelope, 1200)?.sessionId, 'session-ws');
+  store.clear();
+  store.record('session-1', firstTurn, envelope, 1000);
+
   assert.equal(store.resolve([...firstTurn, { role: 'user', content: 'Fork' }], { ...envelope, effort: 'max' }, 1500), undefined);
   assert.equal(store.resolve([{ role: 'user', content: 'Different' }], envelope, 1500), undefined);
   assert.equal(store.resolve([...firstTurn, { role: 'user', content: 'Expired' }], envelope, 2501), undefined);

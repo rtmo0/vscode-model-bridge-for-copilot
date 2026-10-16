@@ -129,7 +129,7 @@ console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false
   await cli.streamClaudeResponse({
     executable: fakeCliPath,
     model: 'default',
-    effort: 'high',
+    effort: 'auto',
     contextSize: 1000000,
     promptBlocks: ['New session'],
     systemPrompt: 'System instructions',
@@ -143,6 +143,9 @@ console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false
     sessionId: '550e8400-e29b-41d4-a716-446655440000'
   });
   const sessionRecord = JSON.parse(await readFile(recordPath, 'utf8'));
+  // `auto` leaves effort to Claude Code's own configuration.
+  assert(!sessionRecord.args.includes('--effort'));
+  assert(!sessionRecord.args.includes('--model'));
   assert(!sessionRecord.args.includes('--no-session-persistence'));
   assert(sessionRecord.args.includes('--append-system-prompt-file'));
   assert(sessionRecord.args.includes('--exclude-dynamic-system-prompt-sections'));
