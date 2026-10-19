@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import * as vscode from 'vscode';
+import type { UsageRecorder } from '../../usage/usageRecorder';
 import { getClaudeCliStatus, streamClaudeResponse, type ClaudeCliStatus, type ClaudeSystemPromptMode } from './cli';
 import { ClaudeSessionStore } from './sessionStore';
 import { ClaudeToolCatalogStore } from './toolCatalog';
@@ -89,7 +90,8 @@ export class ClaudeModelProvider implements vscode.LanguageModelChatProvider, vs
   constructor(
     private readonly output: vscode.LogOutputChannel,
     private readonly usageSink?: (usage: ClaudeUsageUpdate) => void,
-    private readonly state?: vscode.Memento
+    private readonly state?: vscode.Memento,
+    private readonly usageRecorder?: UsageRecorder
   ) {}
 
   dispose(): void {
@@ -249,6 +251,7 @@ export class ClaudeModelProvider implements vscode.LanguageModelChatProvider, vs
     let thinkingCharacters = 0;
     let toolCallCount = 0;
     let usage: ClaudeUsageUpdate = {};
+    const startedAt = Date.now();
 
     this.output.info('Starting Claude Code request', {
       model: selectedModel,
@@ -330,6 +333,25 @@ export class ClaudeModelProvider implements vscode.LanguageModelChatProvider, vs
     const usagePart = createUsageDataPart(usage);
     if (usagePart) {
       progress.report(usagePart);
+    }
+    if (usage.inputTokens !== undefined || usage.outputTokens !== undefined) {
+      // Claude reports cache reads and writes separately from input_tokens; the ledger stores the full prompt.
+      const cacheReads = usage.cacheReadInputTokens ?? 0;
+      const cacheWrites = usage.cacheCreationInputTokens ?? 0;
+      this.usageRecorder?.recordRequest(messages, {
+        provider: 'claude',
+        model: selectedModel,
+        tools: tools.length,
+        durationMs: Date.now() - startedAt,
+        inputTokens: (usage.inputTokens ?? 0) + cacheReads + cacheWrites,
+        cachedInputTokens: cacheReads,
+        cacheWriteTokens: cacheWrites,
+        outputTokens: usage.outputTokens ?? 0,
+        reasoningTokens: usage.thinkingTokens ?? 0,
+        costUsd: usage.totalCostUsd,
+        effort,
+        continuation: continuation !== undefined
+      });
     }
 
     this.output.info('Claude Code request completed', {

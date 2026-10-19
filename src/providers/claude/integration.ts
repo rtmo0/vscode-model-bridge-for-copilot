@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import type { UsageRecorder } from '../../usage/usageRecorder';
 import { ClaudeModelProvider, getClaudeProviderConfig } from './provider';
 import { fetchClaudeUsageReport, getClaudeCliStatus, MINIMUM_CLAUDE_CODE_VERSION, streamClaudeResponse } from './cli';
 import { ClaudeAccountUsageStatusBar } from './usageStatusBar';
@@ -7,13 +8,13 @@ import { showDoctorReport, showManagementMenu } from '../managementMenu';
 const CLAUDE_CODE_INSTALL_URL = 'https://code.claude.com/docs/en/setup';
 const claudeTerminals = new WeakSet<vscode.Terminal>();
 
-export function activateClaude(context: vscode.ExtensionContext): void {
+export function activateClaude(context: vscode.ExtensionContext, usageRecorder?: UsageRecorder): void {
   const output = vscode.window.createOutputChannel('Model Bridge: Claude', { log: true });
   const usageStatusBar = new ClaudeAccountUsageStatusBar(context, {
     fetchReport: () => fetchClaudeUsageReport(getClaudeProviderConfig().claudePath),
     output
   });
-  const provider = new ClaudeModelProvider(output, (usage) => usageStatusBar.record(usage), context.globalState);
+  const provider = new ClaudeModelProvider(output, (usage) => usageStatusBar.record(usage), context.globalState, usageRecorder);
   // Keeps the account limits in step with the CLI sign-in, like Codex does with its auth events.
   const syncAccount = async (): Promise<void> => {
     const status = await getClaudeCliStatus(getClaudeProviderConfig().claudePath);
@@ -136,6 +137,7 @@ export function activateClaude(context: vscode.ExtensionContext): void {
         { icon: 'sign-out', label: 'Sign Out', command: 'modelBridge.claude.auth.signOut' }
       ] },
       { label: 'Usage', actions: [
+        { icon: 'graph', label: 'Usage Report', description: 'Tokens per day, model, and conversation', command: 'modelBridge.usage.showReport' },
         { icon: 'pulse', label: 'Show Account Limits', command: 'modelBridge.claude.showAccountLimits' },
         { icon: 'sync', label: 'Refresh Account Limits', command: 'modelBridge.claude.refreshAccountLimits' }
       ] },

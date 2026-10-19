@@ -1,26 +1,25 @@
 import { randomUUID } from 'node:crypto';
 
-export interface LmStudioToolCallDelta {
-  index?: number;
-  id?: string;
-  type?: string;
-  function?: {
-    name?: string;
-    arguments?: string;
-  };
-}
-
-export interface LmStudioUsage {
+export interface ChatCompletionUsage {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  /** `prompt_tokens_details.cached_tokens`, when the server reports prompt caching. */
+  cachedPromptTokens?: number;
+  /** `completion_tokens_details.reasoning_tokens`. */
+  reasoningTokens?: number;
 }
 
-export interface LmStudioStreamCallbacks {
+export interface ChatCompletionStreamCallbacks {
   onText(text: string): void;
   onReasoning?(text: string): void;
   onToolCall?(call: { id: string; name: string; arguments: Record<string, unknown> }): void;
-  onUsage?(usage: LmStudioUsage): void;
+  onUsage?(usage: ChatCompletionUsage): void;
+}
+
+export interface ChatCompletionStreamOptions {
+  /** Moves a leading `<think>…</think>` block of `content` to reasoning, for models whose server does not split it. */
+  parseThinkTags?: boolean;
 }
 
 interface PendingToolCall {
@@ -30,13 +29,23 @@ interface PendingToolCall {
 }
 
 const MAX_TOOL_ARGUMENT_BYTES = 1_000_000;
+const THINK_OPEN_TAG = '<think>';
+const THINK_CLOSE_TAG = '</think>';
 
-export class LmStudioChatStreamParser {
+export class ChatCompletionStreamParser {
   private buffer = '';
   private readonly toolCalls = new Map<number, PendingToolCall>();
+  private readonly thinkTags?: ThinkTagSplitter;
   private finished = false;
 
-  constructor(private readonly callbacks: LmStudioStreamCallbacks) {}
+  constructor(private readonly callbacks: ChatCompletionStreamCallbacks, options: ChatCompletionStreamOptions = {}) {
+    if (options.parseThinkTags !== false) {
+      this.thinkTags = new ThinkTagSplitter(
+        (text) => this.callbacks.onText(text),
+        (text) => this.callbacks.onReasoning?.(text)
+      );
+    }
+  }
 
   push(chunk: string): void {
     this.buffer += chunk;
@@ -58,6 +67,7 @@ export class LmStudioChatStreamParser {
       return;
     }
     this.finished = true;
+    this.thinkTags?.flush();
     for (const [, toolCall] of [...this.toolCalls.entries()].sort(([left], [right]) => left - right)) {
       if (!toolCall.name) {
         continue;
@@ -111,11 +121,19 @@ export class LmStudioChatStreamParser {
         continue;
       }
       const delta = choice.delta;
-      if (typeof delta.content === 'string') {
-        this.callbacks.onText(delta.content);
+      // LM Studio, llama.cpp, and older vLLM use `reasoning_content`; Ollama and newer vLLM use `reasoning`.
+      const reasoning = typeof delta.reasoning_content === 'string'
+        ? delta.reasoning_content
+        : typeof delta.reasoning === 'string' ? delta.reasoning : undefined;
+      if (reasoning) {
+        this.callbacks.onReasoning?.(reasoning);
       }
-      if (typeof delta.reasoning_content === 'string') {
-        this.callbacks.onReasoning?.(delta.reasoning_content);
+      if (typeof delta.content === 'string' && delta.content) {
+        if (this.thinkTags) {
+          this.thinkTags.push(delta.content);
+        } else {
+          this.callbacks.onText(delta.content);
+        }
       }
       if (Array.isArray(delta.tool_calls)) {
         for (const entry of delta.tool_calls) {
@@ -149,12 +167,89 @@ export class LmStudioChatStreamParser {
   }
 }
 
+/**
+ * Splits `<think>…</think>` out of streamed content. Only a tag at the start of the answer (after whitespace)
+ * opens a block, so answers that merely mention the tag stay text. Tags may arrive split across deltas.
+ */
+export class ThinkTagSplitter {
+  private state: 'start' | 'think' | 'text' = 'start';
+  private pending = '';
+  private afterThink = false;
+
+  constructor(
+    private readonly emitText: (text: string) => void,
+    private readonly emitReasoning: (text: string) => void
+  ) {}
+
+  push(chunk: string): void {
+    if (this.state === 'text') {
+      this.emitText(chunk);
+      return;
+    }
+    this.pending += chunk;
+    while (this.pending) {
+      if (this.state === 'start') {
+        const trimmed = this.pending.trimStart();
+        if (!trimmed || (trimmed.length < THINK_OPEN_TAG.length && THINK_OPEN_TAG.startsWith(trimmed))) {
+          return;
+        }
+        if (trimmed.startsWith(THINK_OPEN_TAG)) {
+          this.state = 'think';
+          this.pending = trimmed.slice(THINK_OPEN_TAG.length);
+          continue;
+        }
+        this.state = 'text';
+        const text = this.afterThink ? trimmed : this.pending;
+        this.pending = '';
+        this.emitText(text);
+        return;
+      }
+      if (this.state === 'think') {
+        const closeIndex = this.pending.indexOf(THINK_CLOSE_TAG);
+        if (closeIndex >= 0) {
+          this.emitReasoningText(this.pending.slice(0, closeIndex));
+          this.pending = this.pending.slice(closeIndex + THINK_CLOSE_TAG.length);
+          this.state = 'start';
+          this.afterThink = true;
+          continue;
+        }
+        const keep = partialTagSuffixLength(this.pending, THINK_CLOSE_TAG);
+        this.emitReasoningText(this.pending.slice(0, this.pending.length - keep));
+        this.pending = this.pending.slice(this.pending.length - keep);
+        return;
+      }
+      this.emitText(this.pending);
+      this.pending = '';
+    }
+  }
+
+  flush(): void {
+    const pending = this.pending;
+    this.pending = '';
+    if (!pending) {
+      return;
+    }
+    if (this.state === 'think') {
+      // The model stopped inside its reasoning (for example at the output limit).
+      this.emitReasoningText(pending);
+    } else if (!this.afterThink || pending.trim()) {
+      this.emitText(this.afterThink ? pending.trimStart() : pending);
+    }
+  }
+
+  private emitReasoningText(text: string): void {
+    if (text) {
+      this.emitReasoning(text);
+    }
+  }
+}
+
 export function parseToolArguments(serialized: string): Record<string, unknown> {
   if (!serialized.trim()) {
     return {};
   }
   if (Buffer.byteLength(serialized) > MAX_TOOL_ARGUMENT_BYTES) {
-    throw new Error('LM Studio returned tool arguments larger than 1 MB.');
+    throw new Error('The server returned tool arguments larger than 1 MB.');
   }
   try {
     const parsed = JSON.parse(serialized) as unknown;
@@ -163,8 +258,18 @@ export function parseToolArguments(serialized: string): Record<string, unknown> 
     }
     return parsed;
   } catch (error) {
-    throw new Error(`LM Studio returned invalid tool arguments: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`The server returned invalid tool arguments: ${error instanceof Error ? error.message : String(error)}`);
   }
+}
+
+// Length of the longest suffix of `value` that could begin `tag`, so a tag split across deltas is not emitted early.
+function partialTagSuffixLength(value: string, tag: string): number {
+  for (let length = Math.min(tag.length - 1, value.length); length > 0; length -= 1) {
+    if (tag.startsWith(value.slice(value.length - length))) {
+      return length;
+    }
+  }
+  return 0;
 }
 
 // OpenAI streams ids and names once, but some compatible servers repeat them in every delta.
@@ -177,7 +282,7 @@ function findEventBoundary(value: string): { index: number; length: number } | u
   return match ? { index: match.index, length: match[0].length } : undefined;
 }
 
-function parseUsage(value: unknown): LmStudioUsage | undefined {
+function parseUsage(value: unknown): ChatCompletionUsage | undefined {
   if (!isRecord(value)) {
     return undefined;
   }
@@ -187,10 +292,14 @@ function parseUsage(value: unknown): LmStudioUsage | undefined {
   if (promptTokens === undefined && completionTokens === undefined && totalTokens === 0) {
     return undefined;
   }
+  const cachedPromptTokens = isRecord(value.prompt_tokens_details) ? readTokenCount(value.prompt_tokens_details.cached_tokens) : undefined;
+  const reasoningTokens = isRecord(value.completion_tokens_details) ? readTokenCount(value.completion_tokens_details.reasoning_tokens) : undefined;
   return {
     promptTokens: promptTokens ?? 0,
     completionTokens: completionTokens ?? 0,
-    totalTokens
+    totalTokens,
+    ...(cachedPromptTokens !== undefined ? { cachedPromptTokens } : {}),
+    ...(reasoningTokens !== undefined ? { reasoningTokens } : {})
   };
 }
 

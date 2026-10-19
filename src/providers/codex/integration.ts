@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
+import type { UsageRecorder } from '../../usage/usageRecorder';
 import { CodexAccountUsageStatusBar } from './accountUsageStatusBar';
-import { CodexModelProvider } from './provider';
+import { CodexModelProvider, type UsageSink } from './provider';
 import { CodexAuthLock } from './auth/codexAuthLock';
 import { CodexAuthManager } from './auth/codexAuthManager';
 import { CodexAuthenticationProvider, CODEX_AUTHENTICATION_PROVIDER_ID } from './auth/codexAuthenticationProvider';
@@ -19,7 +20,7 @@ import { CodexIdentityManager } from './codexIdentity';
 import { registerWebSearchTool } from './hostedTools/webSearchTool';
 import { showDoctorReport, showManagementMenu } from '../managementMenu';
 
-export async function activateCodex(context: vscode.ExtensionContext): Promise<void> {
+export async function activateCodex(context: vscode.ExtensionContext, usageRecorder?: UsageRecorder): Promise<void> {
   const outputChannel = vscode.window.createOutputChannel('Model Bridge: Codex', { log: true });
   const logger = createCodexLogger(outputChannel, 'extension');
   logger.info('extension.activated', {
@@ -60,7 +61,13 @@ export async function activateCodex(context: vscode.ExtensionContext): Promise<v
   );
   const authenticationProvider = new CodexAuthenticationProvider(authManager);
   const accountUsageStatusBar = new CodexAccountUsageStatusBar(context, logger.child('account-usage'), authManager);
-  const provider = new CodexModelProvider(context, logger.child('provider'), accountUsageStatusBar, accountUsageStatusBar, accountUsageStatusBar, authManager);
+  const usageSink: UsageSink = {
+    record(event) {
+      accountUsageStatusBar.record(event);
+      recordCodexUsage(usageRecorder, event);
+    }
+  };
+  const provider = new CodexModelProvider(context, logger.child('provider'), usageSink, accountUsageStatusBar, accountUsageStatusBar, authManager);
   const webSearchIdentityManager = new CodexIdentityManager(context.globalState);
 
   context.subscriptions.push(authManager, authManager.onDidChangeAuth((event) => {
@@ -239,6 +246,7 @@ export async function activateCodex(context: vscode.ExtensionContext): Promise<v
         { icon: 'sign-out', label: 'Sign Out (All Accounts)', command: 'modelBridge.codex.auth.signOut' }
       ] },
       { label: 'Usage', actions: [
+        { icon: 'graph', label: 'Usage Report', description: 'Tokens per day, model, and conversation', command: 'modelBridge.usage.showReport' },
         { icon: 'pulse', label: 'Show Account Limits', command: 'modelBridge.codex.showAccountLimits' },
         { icon: 'sync', label: 'Refresh Account Limits', command: 'modelBridge.codex.refreshAccountLimits' }
       ] },
@@ -343,4 +351,33 @@ function accountDisplayName(account: { email?: string }): string {
 function workspaceLabel(accountId: string | undefined): string | undefined {
   const normalized = accountId?.trim();
   return normalized ? `Workspace ${normalized.slice(0, 8)}` : undefined;
+}
+
+function recordCodexUsage(recorder: UsageRecorder | undefined, event: Parameters<UsageSink['record']>[0]): void {
+  if (!recorder || !event.request) return;
+  const inputTokens = event.usage.input_tokens ?? 0;
+  const cachedInputTokens = Math.min(inputTokens, event.usage.input_tokens_details?.cached_tokens ?? 0);
+  const outputTokens = event.usage.output_tokens ?? 0;
+  // Optional API-equivalent pricing from modelBridge.codex.modelPricingUsdPerMTok; ChatGPT accounts are not billed per token.
+  const pricing = getProviderConfig().modelPricingUsdPerMTok[event.model];
+  const costUsd = pricing && (pricing.input !== undefined || pricing.output !== undefined)
+    ? ((inputTokens - cachedInputTokens) * (pricing.input ?? 0)
+      + cachedInputTokens * (pricing.cachedInput ?? pricing.input ?? 0)
+      + outputTokens * (pricing.output ?? 0)) / 1_000_000
+    : undefined;
+  recorder.recordRequest(event.request.messages, {
+    provider: 'codex',
+    model: event.model,
+    tools: event.request.tools,
+    durationMs: event.request.durationMs,
+    inputTokens,
+    cachedInputTokens,
+    cacheWriteTokens: 0,
+    outputTokens,
+    reasoningTokens: event.usage.output_tokens_details?.reasoning_tokens ?? 0,
+    costUsd,
+    effort: event.request.effort,
+    transport: event.request.transport,
+    continuation: event.request.continuation
+  });
 }

@@ -9,7 +9,17 @@ import { build } from 'esbuild';
 const directory = await mkdtemp(join(tmpdir(), 'model-bridge-lmstudio-provider-'));
 const bundlePath = join(directory, 'lmStudioProvider.mjs');
 let receivedBody;
+let nativeAvailable = true;
 const server = createServer(async (request, response) => {
+  if (request.method === 'GET' && request.url === '/v1/models') {
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ data: [{ id: 'legacy-model', object: 'model' }] }));
+    return;
+  }
+  if (request.method === 'GET' && request.url === '/api/v1/models' && !nativeAvailable) {
+    response.writeHead(404).end();
+    return;
+  }
   if (request.method === 'GET' && request.url === '/api/v1/models') {
     response.writeHead(200, { 'content-type': 'application/json' });
     response.end(JSON.stringify({
@@ -22,13 +32,13 @@ const server = createServer(async (request, response) => {
         params_string: '7B',
         max_context_length: 65536,
         loaded_instances: [{ id: 'local/qwen-test', config: { context_length: 32768 } }],
-        capabilities: { vision: false, trained_for_tool_use: true }
+        capabilities: { vision: false, trained_for_tool_use: true, reasoning: { allowed_options: ['off', 'on'], default: 'on' } }
       }, {
         type: 'llm',
         key: 'local/unloaded',
         max_context_length: 131072,
         loaded_instances: [],
-        capabilities: { vision: false, trained_for_tool_use: true }
+        capabilities: { vision: false, trained_for_tool_use: true, reasoning: { allowed_options: ['on'], default: 'on' } }
       }]
     }));
     return;
@@ -98,6 +108,11 @@ try {
   assert.equal(models[0].maxOutputTokens, 8192);
   assert.equal(models[1].maxInputTokens + models[1].maxOutputTokens, 32768, 'unloaded models use the configured context, not their maximum');
   assert.equal(models[0].capabilities.toolCalling, true);
+  const effortSchema = models[0].configurationSchema.properties.reasoningEffort;
+  assert.deepEqual(effortSchema.enum, ['off', 'on']);
+  assert.equal(effortSchema.default, 'on');
+  assert.deepEqual(effortSchema.enumItemLabels, ['Off', 'On (Default)']);
+  assert.equal(models[1].configurationSchema.properties.reasoningEffort, undefined, 'a single reasoning option offers no choice');
 
   const parts = [];
   await provider.provideLanguageModelChatResponse(
@@ -111,6 +126,7 @@ try {
   assert.equal(receivedBody.stream, true);
   assert.equal(receivedBody.tool_choice, 'required');
   assert.equal(receivedBody.stream_options.include_usage, true);
+  assert.equal(receivedBody.reasoning_effort, undefined, 'the model default leaves reasoning to LM Studio');
   assert(parts.some((part) => part.value === 'Local reply'));
   assert(parts.some((part) => part.thinking === true && part.value === 'Think'));
   assert(parts.some((part) => part.name === 'lookup' && part.callId === 'call_local'));
@@ -131,6 +147,21 @@ try {
   assert.deepEqual(receivedBody.messages.map((message) => message.role), ['user', 'assistant', 'tool', 'user']);
   assert.equal(receivedBody.messages[1].content, null);
   assert.equal(receivedBody.messages[2].tool_call_id, 'call_a');
+
+  await provider.provideLanguageModelChatResponse(models[0], [{ role: 1, name: undefined, content: [new TextPart('Hi')] }],
+    { modelOptions: { reasoningEffort: 'off' } }, { report() {} }, token);
+  assert.equal(receivedBody.reasoning_effort, 'none');
+  await provider.provideLanguageModelChatResponse(models[0], [{ role: 1, name: undefined, content: [new TextPart('Hi')] }],
+    { modelOptions: { reasoningEffort: 'high' } }, { report() {} }, token);
+  assert.equal(receivedBody.reasoning_effort, undefined, 'options the model does not allow are ignored');
+
+  nativeAvailable = false;
+  const fallbackModels = await provider.provideLanguageModelChatInformation({ silent: true }, token);
+  assert.deepEqual(fallbackModels.map((model) => model.name), ['legacy-model']);
+  assert.equal(fallbackModels[0].capabilities.toolCalling, false, 'models without native metadata are not offered to Agent mode');
+  const fallbackStatus = await provider.getStatus();
+  assert.equal(fallbackStatus.catalogSource, 'openai');
+  nativeAvailable = true;
 
   const imagePart = new globalThis.__lmStudioVscodeTest.LanguageModelDataPart(new Uint8Array(100_000), 'image/png');
   const imageTokens = await provider.provideTokenCount(models[0], { role: 1, name: undefined, content: [imagePart] }, token);

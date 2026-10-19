@@ -1,0 +1,126 @@
+/* Model Bridge usage report. Text and chrome follow the VS Code theme; series colors are a validated
+   three-slot categorical palette with separate light and dark steps. */
+:root {
+  --surface: var(--vscode-editor-background, #ffffff);
+  --ink: var(--vscode-foreground, #0b0b0b);
+  --ink-muted: var(--vscode-descriptionForeground, #6f6e69);
+  --hairline: color-mix(in srgb, var(--ink) 12%, transparent);
+  --axis: color-mix(in srgb, var(--ink) 28%, transparent);
+  --hover-wash: color-mix(in srgb, var(--ink) 6%, transparent);
+  --card: color-mix(in srgb, var(--ink) 3%, var(--surface));
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --warning: #fab219;
+}
+body.vscode-dark,
+body.vscode-high-contrast {
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 16px 20px 40px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--vscode-font-family, system-ui, -apple-system, "Segoe UI", sans-serif);
+  font-size: 13px;
+  line-height: 1.45;
+}
+h1 { font-size: 18px; font-weight: 600; margin: 0; }
+h2 { font-size: 14px; font-weight: 600; margin: 0 0 4px; }
+code { font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; }
+
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; margin-bottom: 4px; }
+.filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.filters label { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-muted); }
+select, button {
+  font: inherit;
+  color: var(--vscode-dropdown-foreground, var(--ink));
+  background: var(--vscode-dropdown-background, var(--surface));
+  border: 1px solid var(--vscode-dropdown-border, var(--hairline));
+  border-radius: 4px;
+  padding: 3px 8px;
+}
+button {
+  cursor: pointer;
+  color: var(--vscode-button-secondaryForeground, var(--ink));
+  background: var(--vscode-button-secondaryBackground, var(--hover-wash));
+  border-color: transparent;
+}
+button:hover { background: var(--vscode-button-secondaryHoverBackground, var(--hover-wash)); }
+button.primary { color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
+button.primary:hover { background: var(--vscode-button-hoverBackground); }
+:focus-visible { outline: 1px solid var(--vscode-focusBorder, var(--series-1)); outline-offset: 1px; }
+
+.note { color: var(--ink-muted); margin: 4px 0 16px; max-width: 900px; }
+.hint { color: var(--ink-muted); margin: 0 0 8px; }
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.kpi { background: var(--card); border: 1px solid var(--hairline); border-radius: 6px; padding: 10px 12px; }
+.kpi-label { color: var(--ink-muted); }
+.kpi-value { font-size: 24px; font-weight: 600; margin-top: 2px; }
+.kpi-sub { color: var(--ink-muted); font-size: 12px; margin-top: 2px; }
+.kpi .status { display: inline-flex; align-items: center; gap: 4px; }
+.status-icon { width: 10px; height: 10px; border-radius: 50%; background: var(--warning); display: inline-block; }
+
+.card { background: var(--card); border: 1px solid var(--hairline); border-radius: 6px; padding: 12px 14px 14px; margin-bottom: 16px; }
+.card-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; margin-bottom: 8px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--ink-muted); font-size: 12px; }
+.legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.legend-swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+.chart { position: relative; width: 100%; }
+.chart svg { display: block; width: 100%; overflow: visible; }
+.chart text { fill: var(--ink-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.chart .value-label { fill: var(--ink); }
+.chart .grid { stroke: var(--hairline); stroke-width: 1; }
+.chart .baseline { stroke: var(--axis); stroke-width: 1; }
+.chart .hit { fill: transparent; cursor: default; outline: none; }
+.chart .hit.selectable { cursor: pointer; }
+.chart .hit:hover, .chart .hit:focus { fill: var(--hover-wash); }
+.chart .miss-marker { fill: var(--warning); stroke: var(--surface); stroke-width: 2; }
+.loading .chart, .loading table { opacity: 0.55; transition: opacity 120ms; }
+
+details { margin-top: 10px; }
+summary { cursor: pointer; color: var(--ink-muted); }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--hairline); white-space: nowrap; }
+th { color: var(--ink-muted); font-weight: 600; user-select: none; }
+th.sortable { cursor: pointer; }
+th.sorted::after { content: " ↓"; }
+th.sorted.asc::after { content: " ↑"; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+td.wrap { white-space: normal; min-width: 180px; }
+tr.clickable { cursor: pointer; }
+tr.clickable:hover, tr.clickable:focus { background: var(--hover-wash); outline: none; }
+tr.selected { background: var(--vscode-list-inactiveSelectionBackground, var(--hover-wash)); }
+.miss { display: inline-flex; align-items: center; gap: 4px; }
+
+.tooltip {
+  position: fixed;
+  z-index: 10;
+  pointer-events: none;
+  min-width: 170px;
+  max-width: 320px;
+  background: var(--vscode-editorHoverWidget-background, var(--surface));
+  color: var(--vscode-editorHoverWidget-foreground, var(--ink));
+  border: 1px solid var(--vscode-editorHoverWidget-border, var(--hairline));
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+}
+.tooltip-title { color: var(--ink-muted); margin-bottom: 4px; }
+.tooltip-row { display: flex; align-items: center; gap: 8px; }
+.tooltip-row strong { font-variant-numeric: tabular-nums; min-width: 64px; text-align: right; }
+.tooltip-key { width: 12px; height: 2px; border-radius: 1px; display: inline-block; }
+.tooltip-row span:last-child { color: var(--ink-muted); }
+.tooltip-note { margin-top: 4px; color: var(--ink-muted); }
+
+.empty { text-align: center; color: var(--ink-muted); padding: 48px 16px; }
+[hidden] { display: none !important; }

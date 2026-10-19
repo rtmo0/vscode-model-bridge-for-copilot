@@ -167,6 +167,15 @@ export interface UsageSink {
     model: string;
     usage: ResponseUsage;
     completedAt: number;
+    /** Request context for the usage ledger; counts only. */
+    request?: {
+      messages: readonly vscode.LanguageModelChatRequestMessage[];
+      durationMs: number;
+      tools: number;
+      transport: string;
+      effort?: string;
+      continuation: boolean;
+    };
   }): void;
 }
 
@@ -1144,7 +1153,15 @@ export class CodexModelProvider implements vscode.LanguageModelChatProvider {
             this.usageSink?.record({
               model: selectedModel.requestModel,
               usage: response.usage,
-              completedAt: Date.now()
+              completedAt: Date.now(),
+              request: {
+                messages,
+                durationMs: Date.now() - requestStartedAt,
+                tools: options.tools?.length ?? 0,
+                transport: actualTransport,
+                effort: reasoningEffort ?? undefined,
+                continuation: previousResponseIdUsed
+              }
             });
           }
 

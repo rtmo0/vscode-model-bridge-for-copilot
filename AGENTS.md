@@ -6,7 +6,9 @@
 - `src/settingsMigration.ts`: one-time copy of legacy `anthropicForCopilot.*` and `codexModelProvider.*` settings.
 - `src/providers/claude/`: Claude Code provider (`provider.ts`), process lifecycle (`cli.ts`), stream protocol (`protocol.ts`), optional continuation (`sessionStore.ts`), append-only tool catalog (`toolCatalog.ts`), and usage display (`usageStatusBar.ts`).
 - `src/providers/codex/`: full Codex provider, authentication, Responses transports, model discovery, usage, and tools. `provider.ts` owns the request flow; replay projection lives in `providerReplay.ts`, model alias/availability in `providerModelResolution.ts`, response parts and option helpers in `providerSupport.ts`, and tool-call latency/continuation tracking in `toolCallTracking.ts`.
-- `src/providers/lmstudio/`: local LM Studio provider (`provider.ts`), OpenAI-compatible SSE handling (`protocol.ts`), and commands (`integration.ts`).
+- `src/providers/lmstudio/`: local LM Studio provider (`provider.ts`) and commands (`integration.ts`).
+- `src/providers/openaiCompatible/`: shared `/v1/chat/completions` runtime (`protocol.ts` SSE and `<think>` parsing, `chatCompletions.ts` message conversion, streaming, picker options, reasoning effort) used by LM Studio, plus the OpenAI-Compatible endpoint provider (`provider.ts`), per-server model discovery (`discovery.ts`), and commands (`integration.ts`).
+- `src/usage/`: usage ledger (`usageLedger.ts`, daily JSONL in global storage), report aggregation (`usageReport.ts`), provider-facing recorder (`usageRecorder.ts`), and the report webview (`usageReportPanel.ts` with `media/usageReport.js` and `.css`).
 - `test/smokeManifest.mjs`: manifest and command registration checks; `test/providers/<provider>/` contains provider-specific smoke suites.
 - `out/`: generated bundle; do not edit manually.
 
@@ -15,8 +17,9 @@
 - `npm install`: install dependencies.
 - `npm run check`: TypeScript type-check.
 - `npm run compile`: type-check and bundle.
-- `npm run test:claude`, `npm run test:codex`, `npm run test:lmstudio`: provider-specific smoke suites.
-- `npm run test:smoke`: all provider suites.
+- `npm run test:claude`, `npm run test:codex`, `npm run test:lmstudio`, `npm run test:openai-compatible`: provider-specific smoke suites.
+- `npm run test:usage`: usage ledger, report, and webview panel.
+- `npm run test:smoke`: all suites.
 - `npm run package:vsix`: package a VSIX.
 
 ## Cross-provider constraints
@@ -27,6 +30,8 @@
 - Never log prompts, responses, thinking, tool arguments/results, credentials, or local model attachments.
 - Emit the common VS Code `usage` data shape whenever a backend supplies token usage.
 - Diagnostics must be bounded and safe to copy.
+- Record usage through `UsageRecorder` after a completed request: counts, model, and a salted conversation hash only; recording must never affect a response. Normalize `inputTokens` to the full prompt including cache reads and writes.
+- The usage webview loads only its own `media/` files under a nonce CSP and inserts data with `textContent`.
 
 ## Claude constraints
 
@@ -48,3 +53,11 @@
 - Parse SSE boundaries independently from network chunks and accumulate streamed tool-call fields by index.
 - Treat `reasoning_content` as optional and never assume every model supports tools, vision, or reasoning.
 - LM Studio authentication is optional and stored only in VS Code SecretStorage.
+- Send `reasoning_effort` only for options the model publishes, and nothing for the model default.
+
+## OpenAI-Compatible constraints
+
+- Endpoints are machine-scoped settings; API tokens live only in VS Code SecretStorage, keyed by endpoint URL, and are sent only to that endpoint.
+- One unreachable endpoint must not hide models from the others.
+- Offer a model to Agent mode only when server metadata or an explicit endpoint override reports tool support.
+- Ollama `/v1` requests cannot change `num_ctx`; advertise the loaded or configured context, never the model maximum.

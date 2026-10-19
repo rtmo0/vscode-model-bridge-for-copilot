@@ -1,12 +1,13 @@
 import * as vscode from 'vscode';
+import type { UsageRecorder } from '../../usage/usageRecorder';
 import { isInsecureRemoteURL, LmStudioModelProvider } from './provider';
 import { showDoctorReport, showManagementMenu } from '../managementMenu';
 
 const DOCUMENTATION_URL = 'https://lmstudio.ai/docs/developer/core/server';
 
-export function activateLmStudio(context: vscode.ExtensionContext): LmStudioModelProvider {
+export function activateLmStudio(context: vscode.ExtensionContext, usageRecorder?: UsageRecorder): LmStudioModelProvider {
   const output = vscode.window.createOutputChannel('Model Bridge: LM Studio', { log: true });
-  const provider = new LmStudioModelProvider(context, output);
+  const provider = new LmStudioModelProvider(context, output, usageRecorder);
   context.subscriptions.push(
     output,
     provider,
@@ -94,6 +95,9 @@ async function runLmStudioDoctor(provider: LmStudioModelProvider): Promise<void>
     `Reachable: ${status.reachable ? 'yes' : 'no'}`,
     `Models: ${status.modelCount}`,
     `Loaded models: ${status.loadedModelCount}`,
+    ...(status.catalogSource === 'openai'
+      ? ['Warning: the native /api/v1/models API is unavailable, so tool and vision support are unknown and models are not offered to Agent mode. Update LM Studio.']
+      : []),
     ...(status.models.length > 0 ? [`Catalog: ${status.models.join(', ')}`] : []),
     ...(status.error ? [`Problem: ${status.error}`] : ['Result: ready'])
   ], {

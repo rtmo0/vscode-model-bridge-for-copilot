@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.4.0
+
+### Usage report (all providers)
+
+- New **Model Bridge: Show Usage Report** dashboard: totals, prompt-cache hit rate, and API-equivalent cost; tokens per day and per model; the heaviest conversations and requests; and a per-step chart of any conversation. Filter by period and provider; the report updates while requests complete.
+- **Cache misses** highlight agent tool steps that re-read most of the history instead of using the prompt cache.
+- Requests are recorded as counts only, with a salted conversation hash, for `modelBridge.usage.retentionDays` (default 90). **Export Usage as CSV** and **Clear Usage History** commands; `modelBridge.usage.recordRequests` turns recording off.
+- `modelBridge.codex.modelPricingUsdPerMTok` now drives the Codex cost estimate. LM Studio and OpenAI-compatible servers report cached and reasoning tokens when the server sends `prompt_tokens_details` and `completion_tokens_details`.
+
+### OpenAI-Compatible (new provider)
+
+- New **OpenAI-Compatible** model-picker group for Ollama, llama.cpp server, vLLM, and any other `/v1/chat/completions` server. Configure several endpoints in `modelBridge.openaiCompatible.endpoints` or with **Model Bridge: OpenAI-Compatible: Add Endpoint**.
+- Per-server metadata: Ollama tools, vision, thinking, and context from `/api/show` and `/api/ps`; llama.cpp served context and vision from `/props`; vLLM `max_model_len`; `context_length`, `supported_parameters`, and input modalities from other servers when published.
+- Models are offered to Agent mode only when the server reports tool support; the endpoint `toolCalling` and `vision` fields override the metadata.
+- Optional API tokens per endpoint in VS Code SecretStorage, bound to the endpoint URL. The endpoints setting is machine-scoped, so workspace settings cannot redirect requests.
+- Manage menu, Doctor, Test Connection, Refresh Models, and Remove Endpoint commands.
+
+### LM Studio
+
+- **Thinking Effort** in the model picker for models that publish several `capabilities.reasoning.allowed_options`. A choice other than the model default is sent as `reasoning_effort` (LM Studio 0.4.8 or later).
+- A leading `<think>…</think>` block in the answer is shown as thinking instead of answer text, for models whose server does not split reasoning.
+- Models found only through the `/v1/models` fallback are no longer offered to Agent mode, because their tool support is unknown. Doctor reports when the native API is unavailable.
+- Streaming, message conversion, and token estimates are shared with the OpenAI-Compatible provider.
+
 ## 1.3.1
 
 ### All providers

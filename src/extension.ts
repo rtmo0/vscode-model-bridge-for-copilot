@@ -2,8 +2,11 @@ import * as vscode from 'vscode';
 import { activateClaude } from './providers/claude/integration';
 import { activateCodex } from './providers/codex/integration';
 import { activateLmStudio } from './providers/lmstudio/integration';
+import { activateOpenAICompatible } from './providers/openaiCompatible/integration';
 import { SUPPORT_URL } from './providers/managementMenu';
 import { migrateLegacySettings } from './settingsMigration';
+import { activateUsage } from './usage/integration';
+import type { UsageRecorder } from './usage/usageRecorder';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const output = vscode.window.createOutputChannel('Model Bridge', { log: true });
@@ -21,10 +24,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     output.warn('Legacy settings migration failed', error);
   }
 
+  // Usage recording is optional: providers work without it if it fails to start.
+  let usage: UsageRecorder | undefined;
+  try {
+    usage = activateUsage(context);
+  } catch (error) {
+    output.warn('Usage recording failed to activate', error);
+  }
+
   // Providers are isolated: one failing to activate must not disable the others.
-  await activateProvider(output, 'Claude', () => activateClaude(context));
-  await activateProvider(output, 'LM Studio', () => activateLmStudio(context));
-  await activateProvider(output, 'Codex', () => activateCodex(context));
+  await activateProvider(output, 'Claude', () => activateClaude(context, usage));
+  await activateProvider(output, 'LM Studio', () => activateLmStudio(context, usage));
+  await activateProvider(output, 'OpenAI-Compatible', () => activateOpenAICompatible(context, usage));
+  await activateProvider(output, 'Codex', () => activateCodex(context, usage));
 }
 
 export function deactivate(): void {}
@@ -42,8 +54,10 @@ async function showProviderManager(): Promise<void> {
   const selection = await vscode.window.showQuickPick([
     { label: '$(sparkle) Claude', description: 'Claude Code subscription sign-in', command: 'modelBridge.claude.manage' },
     { label: '$(cloud) Codex', description: 'ChatGPT Codex sign-in and Responses API', command: 'modelBridge.codex.manage' },
-    { label: '$(server) LM Studio', description: 'Local OpenAI-compatible models', command: 'modelBridge.lmstudio.manage' },
+    { label: '$(server) LM Studio', description: 'Local LM Studio models', command: 'modelBridge.lmstudio.manage' },
+    { label: '$(plug) OpenAI-Compatible', description: 'Ollama, llama.cpp, vLLM, and other servers', command: 'modelBridge.openaiCompatible.manage' },
     { label: '', kind: vscode.QuickPickItemKind.Separator, command: '' },
+    { label: '$(graph) Usage Report', description: 'Tokens per day, model, and conversation', command: 'modelBridge.usage.showReport' },
     { label: '$(heart) Support the Project', description: 'Boosty', command: 'modelBridge.support' }
   ], { title: 'Model Bridge Providers', placeHolder: 'Choose a provider to manage' });
   if (selection) await vscode.commands.executeCommand(selection.command);
@@ -53,7 +67,8 @@ async function showDiagnosticsManager(): Promise<void> {
   const selection = await vscode.window.showQuickPick([
     { label: '$(sparkle) Claude Doctor', command: 'modelBridge.claude.doctor' },
     { label: '$(cloud) Codex Doctor', command: 'modelBridge.codex.doctor' },
-    { label: '$(server) LM Studio Doctor', command: 'modelBridge.lmstudio.doctor' }
+    { label: '$(server) LM Studio Doctor', command: 'modelBridge.lmstudio.doctor' },
+    { label: '$(plug) OpenAI-Compatible Doctor', command: 'modelBridge.openaiCompatible.doctor' }
   ], { title: 'Model Bridge Diagnostics', placeHolder: 'Choose a provider diagnostic' });
   if (selection) await vscode.commands.executeCommand(selection.command);
 }

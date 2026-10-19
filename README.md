@@ -3,12 +3,12 @@
 
   <h1>Model Bridge for Copilot</h1>
 
-  <p><strong>Claude subscriptions, ChatGPT Codex, and local LM Studio models in native VS Code Chat.</strong></p>
+  <p><strong>Claude subscriptions, ChatGPT Codex, LM Studio, Ollama, llama.cpp, vLLM, and other OpenAI-compatible models in native VS Code Chat.</strong></p>
 
   <a href="https://boosty.to/rtm00"><img src="https://img.shields.io/badge/Boosty-support-F15F2C?logo=boosty&amp;logoColor=white" alt="Support on Boosty"></a>
 </div>
 
-Model Bridge for Copilot is a multi-provider VS Code Language Model Provider. It keeps the native Chat and Agent experience while letting you choose between a signed-in Claude Code account, ChatGPT Codex, and models running locally in LM Studio.
+Model Bridge for Copilot is a multi-provider VS Code Language Model Provider. It keeps the native Chat and Agent experience while letting you choose between a signed-in Claude Code account, ChatGPT Codex, models running locally in LM Studio, and any OpenAI-compatible server such as Ollama, llama.cpp, or vLLM.
 
 > This is an independent community extension. It is not affiliated with or endorsed by Anthropic, OpenAI, Microsoft, or LM Studio.
 
@@ -19,6 +19,7 @@ Model Bridge for Copilot is a multi-provider VS Code Language Model Provider. It
 | **Claude** | Official Claude Code browser sign-in; no API key handled by the extension | Claude Default, Best, Fable, Sonnet, Opus, and Haiku through safe-mode `stream-json` |
 | **Codex** | ChatGPT browser sign-in with multi-account support, stored in VS Code SecretStorage | Automatic Codex model discovery with HTTP/WebSocket Responses parity |
 | **LM Studio** | No authentication by default; optional local server token in VS Code SecretStorage | Native model metadata plus OpenAI-compatible streaming chat and function tools |
+| **OpenAI-Compatible** | Optional API token per endpoint in VS Code SecretStorage, bound to the endpoint URL | Ollama, llama.cpp server, vLLM, or any `/v1/chat/completions` server, with per-server metadata discovery |
 
 Each provider has its own model-picker group and management command. Run **Model Bridge: Manage Providers** to open the unified entry point.
 
@@ -32,7 +33,9 @@ Each provider has its own model-picker group and management command. Run **Model
 - The same Manage menu layout (Account, Usage, Models/Tools, Diagnostics) and Doctor report for every provider.
 - Prompt-cache-friendly requests that conserve Claude and ChatGPT subscription limits during long agent sessions.
 - Codex multi-account OAuth, automatic refresh, WebSocket reuse, continuation, hosted Web Search, and optional Native Tool Search.
-- LM Studio native model metadata including loaded context, vision, tool-use training, architecture, size, and quantization.
+- LM Studio native model metadata including loaded context, vision, tool-use training, reasoning options, architecture, size, and quantization.
+- Several OpenAI-compatible endpoints at once: Ollama tools, vision, thinking, and context from `/api/show`; llama.cpp served context from `/props`; vLLM `max_model_len`.
+- Thinking Effort in the model picker for local reasoning models, and `<think>…</think>` blocks shown as thinking instead of answer text.
 - Safe diagnostics for every provider without logging prompts, responses, credentials, or tool contents.
 
 ## Quick start
@@ -63,12 +66,42 @@ Codex authentication is browser sign-in only in Model Bridge. API-key, device-co
 
 The default endpoint is `http://127.0.0.1:1234/v1`. Model Bridge uses native `GET /api/v1/models` for rich metadata and OpenAI-compatible `POST /v1/chat/completions` for VS Code function tools. If server authentication is enabled, use **Set API Token**; the token is stored only in VS Code SecretStorage.
 
+Models that publish several reasoning options (`capabilities.reasoning.allowed_options`) get a **Thinking Effort** picker; a choice other than the model default is sent as `reasoning_effort` (LM Studio 0.4.8 or later). If the native API is unavailable, models listed only by `/v1/models` are shown for chat but not offered to Agent mode, because their tool support is unknown; update LM Studio to restore it.
+
+### Ollama, llama.cpp, vLLM, and other OpenAI-compatible servers
+
+1. Start the server, for example `ollama serve`, `llama-server --jinja -m model.gguf`, or `vllm serve <model> --enable-auto-tool-choice --tool-call-parser <parser>`.
+2. Run **Model Bridge: OpenAI-Compatible: Add Endpoint**, choose the server type, and confirm the URL. An API token is optional.
+3. Choose a model from the **OpenAI-Compatible** group. Each model's detail shows the endpoint name.
+
+Endpoints live in `modelBridge.openaiCompatible.endpoints`:
+
+```json
+"modelBridge.openaiCompatible.endpoints": [
+  { "name": "Ollama", "type": "ollama", "baseURL": "http://127.0.0.1:11434/v1" },
+  { "name": "GPU box", "type": "vllm", "baseURL": "https://gpu.example.com/v1", "toolCalling": true },
+  { "name": "Router", "type": "openai", "baseURL": "https://router.example.com/v1", "models": ["vendor/model-a"] }
+]
+```
+
+| Type | Metadata used |
+|---|---|
+| `ollama` | `/api/tags`, `/api/show` (tools, vision, thinking, maximum context), `/api/ps` (loaded context) |
+| `llamacpp` | `/v1/models` plus `/props` (served context, vision, chat-template tool support) |
+| `vllm` | `/v1/models` `max_model_len` |
+| `openai` | `/v1/models`, including `context_length`, `supported_parameters`, and `architecture.input_modalities` when published |
+
+Models are offered to Agent mode only when the server reports tool support. Set `"toolCalling": true` (or `"vision": true`) on an endpoint to override the metadata, for example for vLLM started with `--enable-auto-tool-choice`. Ollama `/v1` requests use the server context (`OLLAMA_CONTEXT_LENGTH`), so set `modelBridge.openaiCompatible.contextSize` or the endpoint `contextSize` to match it; a loaded model reports its real context. Thinking models in Ollama get a **Thinking Effort** picker.
+
+The setting is machine-scoped, so workspace settings cannot redirect requests, and API tokens are stored per endpoint URL in VS Code SecretStorage.
+
 ## Unified management
 
 Useful commands:
 
 - `Model Bridge: Manage Providers`
 - `Model Bridge: Open Provider Diagnostics`
+- `Model Bridge: Show Usage Report`
 - `Model Bridge: Claude: Run Doctor`
 - `Model Bridge: Claude: Test Connection`
 - `Model Bridge: Claude: Show Account Limits`
@@ -79,12 +112,17 @@ Useful commands:
 - `Model Bridge: LM Studio: Run Doctor`
 - `Model Bridge: LM Studio: Test Connection`
 - `Model Bridge: LM Studio: Refresh Models`
+- `Model Bridge: OpenAI-Compatible: Add Endpoint`
+- `Model Bridge: OpenAI-Compatible: Run Doctor`
+- `Model Bridge: OpenAI-Compatible: Test Connection`
 
 Provider settings live under **Settings → Extensions → Model Bridge** and use these sections:
 
 - `modelBridge.claude.*`
 - `modelBridge.codex.*`
 - `modelBridge.lmstudio.*`
+- `modelBridge.openaiCompatible.*`
+- `modelBridge.usage.*`
 
 ### Upgrading from Anthropic for Copilot or Codex For Copilot
 
@@ -111,6 +149,17 @@ Further savings you can choose:
 
 The Claude log (**Output → Model Bridge: Claude**) records input, cache-write, cache-read, and output token counts for every request, so you can check that cache reads dominate during agent sessions.
 
+### Usage report
+
+**Model Bridge: Show Usage Report** opens a dashboard of the tokens used through every provider:
+
+- totals, prompt-cache hit rate, and API-equivalent cost for today or the last 7, 30, or 90 days, per provider;
+- tokens per day and per model, split into uncached input, cached input, and output;
+- the heaviest conversations and requests, sortable by any column, with a per-step chart of a selected conversation;
+- **cache misses**: agent tool steps with at least 8K input where less than half was read from the prompt cache, which is where long sessions usually lose subscription limits.
+
+Each completed request is recorded as counts only (tokens, model, step, duration, transport) with a conversation hash salted per machine; prompts, responses, and tool contents are never stored. History is kept for `modelBridge.usage.retentionDays` (90 days) in the extension's storage and can be exported as CSV or deleted with **Clear Usage History**. Set `modelBridge.usage.recordRequests` to `false` to stop recording. Claude cost comes from Claude Code; Codex cost uses `modelBridge.codex.modelPricingUsdPerMTok` when you set it.
+
 ### Native Tool Search
 
 **Model Bridge: Codex: Enable Native Tool Search** sets the global `github.copilot.chat.virtualTools.threshold` setting to `0`. That setting is shared by every chat model, so Claude, LM Studio, and Copilot models then receive the full tool list. Run **Model Bridge: Codex: Use VS Code Virtual Tool Groups** to restore the previous value, including before uninstalling the extension.
@@ -118,9 +167,10 @@ The Claude log (**Output → Model Bridge: Claude**) records input, cache-write,
 ## Privacy and security
 
 - Claude credentials remain owned by the official Claude Code CLI.
-- ChatGPT OAuth and optional LM Studio tokens use VS Code SecretStorage.
+- ChatGPT OAuth, optional LM Studio tokens, and OpenAI-compatible endpoint tokens use VS Code SecretStorage; endpoint tokens are bound to the endpoint URL.
 - Local LM Studio prompts stay local unless the loaded model or LM Studio configuration routes them elsewhere.
 - Provider logs contain only bounded diagnostics, counts, timings, model IDs, and sanitized errors.
+- The usage history stores token counts, model names, and a salted conversation hash on this machine only.
 - Claude Code built-in tools are disabled for hidden provider requests; selected tools execute through VS Code.
 - Temporary Claude prompt files use restricted permissions and are always removed.
 
@@ -129,7 +179,7 @@ The Claude log (**Output → Model Bridge: Claude**) records input, cache-write,
 The extension runs on the VS Code workspace host. For Remote-SSH, Dev Containers, WSL, and Codespaces:
 
 - install and sign in to Claude Code on the remote host;
-- make the LM Studio server reachable from that host and configure its URL;
+- make the LM Studio server and any OpenAI-compatible endpoints reachable from that host and configure their URLs;
 - Codex credentials are stored on the host running the extension.
 
 ## Develop locally

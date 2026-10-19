@@ -1,8 +1,8 @@
 {
   "name": "model-bridge-for-copilot",
   "displayName": "Model Bridge for Copilot - Claude, Codex & Local LLMs",
-  "description": "Use Claude subscriptions, ChatGPT Codex, and local LM Studio models in native VS Code Chat and Agent mode.",
-  "version": "1.3.1",
+  "description": "Use Claude subscriptions, ChatGPT Codex, LM Studio, Ollama, llama.cpp, vLLM, and other OpenAI-compatible models in native VS Code Chat and Agent mode.",
+  "version": "1.4.0",
   "publisher": "samarin-aa-aka-rtm00",
   "icon": "assets/model-bridge-for-copilot.png",
   "license": "MIT",
@@ -40,12 +40,17 @@
     "local-llm",
     "copilot",
     "agent",
-    "language-model"
+    "language-model",
+    "ollama",
+    "llama.cpp",
+    "vllm",
+    "openai-compatible"
   ],
   "activationEvents": [
     "onLanguageModelChatProvider:model-bridge-claude",
     "onLanguageModelChatProvider:model-bridge-codex",
     "onLanguageModelChatProvider:model-bridge-lmstudio",
+    "onLanguageModelChatProvider:model-bridge-openai-compatible",
     "onStartupFinished"
   ],
   "extensionKind": [
@@ -57,13 +62,15 @@
     "check": "tsc -p ./ --noEmit",
     "compile": "npm run check && node esbuild.mjs",
     "build": "node esbuild.mjs",
-    "test:smoke": "node test/smokeManifest.mjs && npm run test:claude && npm run test:codex && npm run test:lmstudio",
+    "test:smoke": "node test/smokeManifest.mjs && npm run test:claude && npm run test:codex && npm run test:lmstudio && npm run test:openai-compatible && npm run test:usage",
     "package:vsix": "vsce package --no-dependencies",
     "package": "vsce package --no-dependencies",
     "watch": "tsc -watch -p ./",
     "vscode:prepublish": "npm run compile",
     "test:codex": "node test/providers/codex/smokeCodexProtocol.mjs && node test/providers/codex/smokeCodexRequestBuilder.mjs && node test/providers/codex/smokePromptCacheReplay.mjs && node test/providers/codex/smokeResponsesClient.mjs && node test/providers/codex/smokeConversationReuse.mjs && node test/providers/codex/smokeAccountUsage.mjs && node test/providers/codex/smokeAuth.mjs && node test/providers/codex/smokeToolCallTracking.mjs && node test/providers/codex/smokeModelResolution.mjs",
-    "test:lmstudio": "node test/providers/lmstudio/smokeLmStudioProtocol.mjs && node test/providers/lmstudio/smokeLmStudioProvider.mjs",
+    "test:lmstudio": "node test/providers/lmstudio/smokeLmStudioProvider.mjs",
+    "test:usage": "node test/usage/smokeUsage.mjs",
+    "test:openai-compatible": "node test/providers/openaiCompatible/smokeChatCompletionProtocol.mjs && node test/providers/openaiCompatible/smokeOpenAICompatibleProvider.mjs",
     "test:claude": "node test/providers/claude/smokeClaudeProtocol.mjs && node test/providers/claude/smokeClaudeCli.mjs && node test/providers/claude/smokeClaudeSessionStore.mjs && node test/providers/claude/smokeClaudeToolCatalog.mjs && node test/providers/claude/smokeClaudeProviderOptions.mjs && node test/providers/claude/smokeClaudeUsageStatus.mjs"
   },
   "devDependencies": {
@@ -98,6 +105,11 @@
         "vendor": "model-bridge-lmstudio",
         "displayName": "LM Studio",
         "managementCommand": "modelBridge.lmstudio.manage"
+      },
+      {
+        "vendor": "model-bridge-openai-compatible",
+        "displayName": "OpenAI-Compatible",
+        "managementCommand": "modelBridge.openaiCompatible.manage"
       }
     ],
     "languageModelTools": [
@@ -137,6 +149,22 @@
       {
         "command": "modelBridge.doctor",
         "title": "Open Provider Diagnostics",
+        "category": "Model Bridge"
+      },
+      {
+        "command": "modelBridge.usage.showReport",
+        "title": "Show Usage Report",
+        "category": "Model Bridge",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "modelBridge.usage.exportCsv",
+        "title": "Export Usage as CSV",
+        "category": "Model Bridge"
+      },
+      {
+        "command": "modelBridge.usage.clear",
+        "title": "Clear Usage History",
         "category": "Model Bridge"
       },
       {
@@ -348,6 +376,56 @@
         "command": "modelBridge.lmstudio.testConnection",
         "title": "Test Connection",
         "category": "Model Bridge: LM Studio"
+      },
+      {
+        "command": "modelBridge.openaiCompatible.manage",
+        "title": "Manage",
+        "category": "Model Bridge: OpenAI-Compatible"
+      },
+      {
+        "command": "modelBridge.openaiCompatible.addEndpoint",
+        "title": "Add Endpoint",
+        "category": "Model Bridge: OpenAI-Compatible"
+      },
+      {
+        "command": "modelBridge.openaiCompatible.removeEndpoint",
+        "title": "Remove Endpoint",
+        "category": "Model Bridge: OpenAI-Compatible"
+      },
+      {
+        "command": "modelBridge.openaiCompatible.setApiToken",
+        "title": "Set API Token",
+        "category": "Model Bridge: OpenAI-Compatible"
+      },
+      {
+        "command": "modelBridge.openaiCompatible.clearApiToken",
+        "title": "Clear API Token",
+        "category": "Model Bridge: OpenAI-Compatible"
+      },
+      {
+        "command": "modelBridge.openaiCompatible.refreshModels",
+        "title": "Refresh Models",
+        "category": "Model Bridge: OpenAI-Compatible"
+      },
+      {
+        "command": "modelBridge.openaiCompatible.testConnection",
+        "title": "Test Connection",
+        "category": "Model Bridge: OpenAI-Compatible"
+      },
+      {
+        "command": "modelBridge.openaiCompatible.doctor",
+        "title": "Run Doctor",
+        "category": "Model Bridge: OpenAI-Compatible"
+      },
+      {
+        "command": "modelBridge.openaiCompatible.openSettings",
+        "title": "Open Settings",
+        "category": "Model Bridge: OpenAI-Compatible"
+      },
+      {
+        "command": "modelBridge.openaiCompatible.openLogs",
+        "title": "Open Logs",
+        "category": "Model Bridge: OpenAI-Compatible"
       }
     ],
     "configuration": {
@@ -849,7 +927,7 @@
           "type": "integer",
           "default": 32768,
           "minimum": 1024,
-          "description": "Fallback context window advertised for local models when the server does not publish one."
+          "description": "Fallback context window advertised for local models when the server does not publish one. Models found only through the OpenAI-compatible /v1/models fallback are not offered to Agent mode, because their tool support is unknown."
         },
         "modelBridge.lmstudio.maxOutputTokens": {
           "type": "integer",
@@ -870,6 +948,106 @@
           "minimum": 30,
           "maximum": 3600,
           "description": "LM Studio request timeout."
+        },
+        "modelBridge.openaiCompatible.endpoints": {
+          "type": "array",
+          "default": [],
+          "scope": "machine",
+          "markdownDescription": "OpenAI-compatible servers whose models appear in the **OpenAI-Compatible** model-picker group. Use **Model Bridge: OpenAI-Compatible: Add Endpoint** to add one. API tokens are stored in VS Code SecretStorage, bound to the endpoint URL, and never in settings. Machine-scoped, so workspace settings cannot redirect requests.",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "baseURL"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Unique name shown next to the models."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "ollama",
+                  "llamacpp",
+                  "vllm",
+                  "openai"
+                ],
+                "default": "openai",
+                "enumDescriptions": [
+                  "Ollama: tools, vision, thinking, and context from /api/show and /api/ps.",
+                  "llama.cpp server: served context and vision from /props.",
+                  "vLLM: context from max_model_len in /v1/models.",
+                  "Any other OpenAI-compatible server or hosted API."
+                ],
+                "description": "Server type, which selects how model metadata is discovered."
+              },
+              "baseURL": {
+                "type": "string",
+                "description": "Base URL of the OpenAI-compatible API, usually ending in /v1, for example http://127.0.0.1:11434/v1."
+              },
+              "contextSize": {
+                "type": "integer",
+                "minimum": 1024,
+                "description": "Context window for models whose served context the server does not report. Defaults to modelBridge.openaiCompatible.contextSize."
+              },
+              "toolCalling": {
+                "type": "boolean",
+                "description": "Override tool support for every model of this endpoint. Models without tool support are not offered to Agent mode."
+              },
+              "vision": {
+                "type": "boolean",
+                "description": "Override image input support for every model of this endpoint."
+              },
+              "models": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "uniqueItems": true,
+                "description": "Only show these model IDs. Empty shows every model."
+              }
+            }
+          }
+        },
+        "modelBridge.openaiCompatible.contextSize": {
+          "type": "integer",
+          "default": 32768,
+          "minimum": 1024,
+          "description": "Fallback context window for models whose served context the server does not report. For Ollama, match OLLAMA_CONTEXT_LENGTH, because /v1 requests cannot change it."
+        },
+        "modelBridge.openaiCompatible.maxOutputTokens": {
+          "type": "integer",
+          "default": 8192,
+          "minimum": 1,
+          "description": "Maximum output tokens requested from OpenAI-compatible servers."
+        },
+        "modelBridge.openaiCompatible.temperature": {
+          "type": "number",
+          "default": 0.2,
+          "minimum": 0,
+          "maximum": 2,
+          "description": "Default sampling temperature for OpenAI-compatible models."
+        },
+        "modelBridge.openaiCompatible.requestTimeoutSeconds": {
+          "type": "integer",
+          "default": 600,
+          "minimum": 30,
+          "maximum": 3600,
+          "description": "OpenAI-compatible request timeout."
+        },
+        "modelBridge.usage.recordRequests": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Record the token usage of each completed request for **Model Bridge: Show Usage Report**. Only counts, model names, and a local conversation hash are stored on this machine; never prompts, responses, or tool contents."
+        },
+        "modelBridge.usage.retentionDays": {
+          "type": "integer",
+          "default": 90,
+          "minimum": 1,
+          "maximum": 365,
+          "description": "Days of usage history kept for the usage report. Older days are deleted automatically."
         }
       }
     }
