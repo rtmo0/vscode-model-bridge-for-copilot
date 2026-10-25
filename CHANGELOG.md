@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.4.1
+
+### Claude
+
+- The model picker now lists every model Claude Code offers the signed-in account, including specific versions (for example Opus 4.8, Opus 4.6, Sonnet 4.6, Haiku 4.5), as Claude Code's own picker does. The list comes from Claude Code's `initialize` control request, which makes no model request; it is cached per Claude Code version and account and refreshed in the background.
+- Thinking Effort shows only the efforts each model supports, and models without effort support have no effort option. An unsupported effort is no longer passed to Claude Code.
+- New `modelBridge.claude.hiddenModels` setting hides specific versions; **Quick Configure Models** now chooses from the full list. `enabledModels` still controls the aliases.
+- The usage report records the model that answered (for example `claude-opus-5-5`) instead of the alias.
+- If Claude Code cannot list its models, the built-in aliases are shown as before.
+
+### All providers
+
+- Updated the bundled `undici` HTTP client to 7.30.1, which fixes three high-severity advisories (EventSource parser memory use, Subresource Integrity bypass, and excessive content-encodings).
+
 ## 1.4.0
 
 ### Usage report (all providers)

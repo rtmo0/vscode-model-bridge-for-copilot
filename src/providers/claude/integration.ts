@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import type { UsageRecorder } from '../../usage/usageRecorder';
+import { CLAUDE_ALIAS_IDS } from './modelCatalog';
 import { ClaudeModelProvider, getClaudeProviderConfig } from './provider';
 import { fetchClaudeUsageReport, getClaudeCliStatus, MINIMUM_CLAUDE_CODE_VERSION, streamClaudeResponse } from './cli';
 import { ClaudeAccountUsageStatusBar } from './usageStatusBar';
@@ -48,7 +49,7 @@ export function activateClaude(context: vscode.ExtensionContext, usageRecorder?:
     vscode.window.onDidCloseTerminal((terminal) => {
       if (claudeTerminals.has(terminal)) {
         claudeTerminals.delete(terminal);
-        provider.refresh();
+        provider.refreshModelCatalog();
         void syncAccount().catch(() => undefined);
       }
     }),
@@ -62,17 +63,21 @@ export function activateClaude(context: vscode.ExtensionContext, usageRecorder?:
     vscode.commands.registerCommand('modelBridge.claude.updateClaudeCode', () => {
       createClaudeTerminal('Update Claude Code', ['update']).show();
     }),
-    vscode.commands.registerCommand('modelBridge.claude.doctor', () => runDoctor(context, usageStatusBar)),
+    vscode.commands.registerCommand('modelBridge.claude.doctor', () => runDoctor(context, usageStatusBar, provider)),
     vscode.commands.registerCommand('modelBridge.claude.testConnection', () => testClaudeConnection()),
     vscode.commands.registerCommand('modelBridge.claude.quickConfigure', async () => {
-      if (await quickConfigure()) {
+      if (await quickConfigure(provider)) {
         provider.refresh();
         vscode.window.showInformationMessage('Claude model defaults updated.');
       }
     }),
-    vscode.commands.registerCommand('modelBridge.claude.refreshModels', () => {
-      provider.refresh();
-      vscode.window.showInformationMessage('Anthropic model availability refreshed.');
+    vscode.commands.registerCommand('modelBridge.claude.refreshModels', async () => {
+      provider.refreshModelCatalog();
+      const models = await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: 'Loading Claude models…' },
+        () => provider.listModelChoices()
+      );
+      vscode.window.showInformationMessage(`Claude models refreshed: ${models.length} available.`);
     }),
     vscode.commands.registerCommand('modelBridge.claude.showAccountLimits', () => usageStatusBar.showDetails()),
     vscode.commands.registerCommand('modelBridge.claude.refreshAccountLimits', async () => {
@@ -228,11 +233,18 @@ async function testClaudeConnection(): Promise<void> {
   }
 }
 
-async function runDoctor(context: vscode.ExtensionContext, usageStatusBar: ClaudeAccountUsageStatusBar): Promise<void> {
+async function runDoctor(
+  context: vscode.ExtensionContext,
+  usageStatusBar: ClaudeAccountUsageStatusBar,
+  provider: ClaudeModelProvider
+): Promise<void> {
   const config = getClaudeProviderConfig();
-  const status = await vscode.window.withProgress(
+  const { status, models } = await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: 'Checking Model Bridge: Claude…' },
-    () => getClaudeCliStatus(config.claudePath)
+    async () => {
+      const cliStatus = await getClaudeCliStatus(config.claudePath);
+      return { status: cliStatus, models: cliStatus.authenticated ? await provider.listModelChoices() : [] };
+    }
   );
   await showDoctorReport([
     'Model Bridge: Claude Doctor',
@@ -248,6 +260,7 @@ async function runDoctor(context: vscode.ExtensionContext, usageStatusBar: Claud
     `Authentication method: ${status.authMethod ?? 'unknown'}`,
     `Plan: ${status.subscriptionType ?? 'unknown'}`,
     `Account limits: ${usageStatusBar.getCompactText() ?? 'not loaded'}`,
+    `Models: ${models.length > 0 ? models.map((model) => model.value).join(', ') : 'not loaded'}`,
     `Workspace host available: ${vscode.workspace.workspaceFolders?.length ? 'yes' : 'no'}`,
     `Session continuation: ${config.sessionContinuation ? 'enabled' : 'disabled'}`,
     `Request timeout: ${Math.round(config.requestTimeoutMs / 1_000)} seconds`,
@@ -260,21 +273,25 @@ async function runDoctor(context: vscode.ExtensionContext, usageStatusBar: Claud
   });
 }
 
-async function quickConfigure(): Promise<boolean> {
+async function quickConfigure(provider: ClaudeModelProvider): Promise<boolean> {
   const configuration = vscode.workspace.getConfiguration('modelBridge.claude');
-  const currentModels = new Set(configuration.get<string[]>('enabledModels', ['default', 'best', 'fable', 'sonnet', 'opus', 'haiku']));
-  const modelItems = [
-    { label: 'Claude Default', value: 'default' },
-    { label: 'Claude Best', value: 'best', description: 'Fable when available, otherwise Opus' },
-    { label: 'Claude Fable', value: 'fable', description: 'May require usage credits' },
-    { label: 'Claude Sonnet', value: 'sonnet' },
-    { label: 'Claude Opus', value: 'opus' },
-    { label: 'Claude Haiku', value: 'haiku' }
-  ].map((item) => ({ ...item, picked: currentModels.has(item.value) }));
+  const config = getClaudeProviderConfig();
+  const choices = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: 'Loading Claude models…' },
+    () => provider.listModelChoices()
+  );
+  const modelItems = choices.map((entry) => ({
+    label: entry.name,
+    description: entry.detail,
+    detail: entry.description,
+    value: entry.value,
+    picked: CLAUDE_ALIAS_IDS.has(entry.value) ? config.enabledModels.includes(entry.value) : !config.hiddenModels.includes(entry.value)
+  }));
   const models = await vscode.window.showQuickPick(modelItems, {
     title: 'Claude models',
     placeHolder: 'Choose models to show in the model picker',
-    canPickMany: true
+    canPickMany: true,
+    matchOnDescription: true
   });
   if (!models || models.length === 0) {
     return false;
@@ -303,7 +320,13 @@ async function quickConfigure(): Promise<boolean> {
   }
 
   await Promise.all([
-    configuration.update('enabledModels', models.map((model) => model.value), vscode.ConfigurationTarget.Global),
+    // Aliases are listed in enabledModels; other models are shown unless listed in hiddenModels.
+    configuration.update('enabledModels', models.map((model) => model.value).filter((value) => CLAUDE_ALIAS_IDS.has(value)), vscode.ConfigurationTarget.Global),
+    configuration.update(
+      'hiddenModels',
+      modelItems.filter((item) => !CLAUDE_ALIAS_IDS.has(item.value) && !models.includes(item)).map((item) => item.value),
+      vscode.ConfigurationTarget.Global
+    ),
     configuration.update('defaultEffort', effort.value, vscode.ConfigurationTarget.Global),
     configuration.update('defaultContextSize', context.value, vscode.ConfigurationTarget.Global)
   ]);

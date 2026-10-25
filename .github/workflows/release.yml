@@ -62,8 +62,13 @@ jobs:
             exit 1
           fi
 
-      - name: Audit dependencies
-        run: npm audit
+      # Runtime dependencies are bundled into the extension, so their advisories block the build.
+      - name: Audit runtime dependencies
+        run: npm audit --omit=dev
+
+      # Build tooling (vsce, esbuild, TypeScript) is not shipped; its advisories are reported without failing.
+      - name: Audit build tooling
+        run: npm audit || echo "::warning::npm audit reports advisories in build-only dependencies; see the log above."
 
       - name: Compile and test
         run: npm run compile && npm run test:smoke

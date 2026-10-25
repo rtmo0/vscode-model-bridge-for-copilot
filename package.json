@@ -2,7 +2,7 @@
   "name": "model-bridge-for-copilot",
   "displayName": "Model Bridge for Copilot - Claude, Codex & Local LLMs",
   "description": "Use Claude subscriptions, ChatGPT Codex, LM Studio, Ollama, llama.cpp, vLLM, and other OpenAI-compatible models in native VS Code Chat and Agent mode.",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "publisher": "samarin-aa-aka-rtm00",
   "icon": "assets/model-bridge-for-copilot.png",
   "license": "MIT",
@@ -71,7 +71,7 @@
     "test:lmstudio": "node test/providers/lmstudio/smokeLmStudioProvider.mjs",
     "test:usage": "node test/usage/smokeUsage.mjs",
     "test:openai-compatible": "node test/providers/openaiCompatible/smokeChatCompletionProtocol.mjs && node test/providers/openaiCompatible/smokeOpenAICompatibleProvider.mjs",
-    "test:claude": "node test/providers/claude/smokeClaudeProtocol.mjs && node test/providers/claude/smokeClaudeCli.mjs && node test/providers/claude/smokeClaudeSessionStore.mjs && node test/providers/claude/smokeClaudeToolCatalog.mjs && node test/providers/claude/smokeClaudeProviderOptions.mjs && node test/providers/claude/smokeClaudeUsageStatus.mjs"
+    "test:claude": "node test/providers/claude/smokeClaudeProtocol.mjs && node test/providers/claude/smokeClaudeCli.mjs && node test/providers/claude/smokeClaudeSessionStore.mjs && node test/providers/claude/smokeClaudeToolCatalog.mjs && node test/providers/claude/smokeClaudeProviderOptions.mjs && node test/providers/claude/smokeClaudeUsageStatus.mjs && node test/providers/claude/smokeClaudeModelCatalog.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.15.30",
@@ -530,7 +530,16 @@
               "haiku"
             ]
           },
-          "description": "Claude model aliases shown in the VS Code model picker."
+          "description": "Claude model aliases shown in the VS Code model picker. Aliases follow the latest model of their family. Specific model versions from Claude Code are shown unless listed in modelBridge.claude.hiddenModels."
+        },
+        "modelBridge.claude.hiddenModels": {
+          "type": "array",
+          "default": [],
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          },
+          "markdownDescription": "Specific Claude models to hide from the model picker, by Claude Code model ID (for example `claude-opus-4-6`). The model list comes from the signed-in Claude Code CLI; use **Model Bridge: Claude: Quick Configure Models** to choose from it."
         },
         "modelBridge.claude.requestTimeoutSeconds": {
           "type": "integer",

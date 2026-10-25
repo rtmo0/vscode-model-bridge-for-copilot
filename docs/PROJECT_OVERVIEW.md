@@ -1,6 +1,6 @@
 # Model Bridge for Copilot — обзор проекта
 
-Состояние на версию **1.4.0** (октябрь 2026). Документ описывает назначение, архитектуру, провайдеры, инфраструктуру и предлагаемые доработки.
+Состояние на версию **1.4.1** (октябрь 2026). Документ описывает назначение, архитектуру, провайдеры, инфраструктуру и предлагаемые доработки.
 
 ---
 
@@ -83,7 +83,7 @@ src/
 5. `ClaudeToolProtocolParser` вырезает маркеры из текстового потока и превращает их в `LanguageModelToolCallPart`. Thinking транслируется в `LanguageModelThinkingPart`, если он доступен в API.
 6. Usage (input / cache write / cache read / output) пишется в лог и отправляется в VS Code.
 
-Модели: `default`, `best`, `fable`, `sonnet`, `opus`, `haiku` (`modelBridge.claude.enabledModels`). Отказ для Fable скрывает также Best, потому что Best разрешается в Fable.
+Модели берутся из каталога Claude Code: управляющий запрос `initialize` в stream-json (без пользовательского сообщения и без расхода токенов) возвращает алиасы (`default`, `opus`, `sonnet`, `fable`, `haiku`) и конкретные версии (`claude-opus-4-8`, `claude-sonnet-4-6` и т. д.) с поддерживаемыми уровнями effort. Каталог кэшируется в `globalState` с ключом «путь к CLI + версия + аккаунт (хэш)» на 6 часов и обновляется в фоне; при ошибке используется встроенный список алиасов ([modelCatalog.ts](../src/providers/claude/modelCatalog.ts)). Алиасы фильтруются `enabledModels`, версии — `hiddenModels`. Отказ для Fable скрывает также Best, потому что Best разрешается в Fable.
 
 ### Ограничения
 

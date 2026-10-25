@@ -16,7 +16,7 @@ Model Bridge for Copilot is a multi-provider VS Code Language Model Provider. It
 
 | Provider | Authentication | Models and transport |
 |---|---|---|
-| **Claude** | Official Claude Code browser sign-in; no API key handled by the extension | Claude Default, Best, Fable, Sonnet, Opus, and Haiku through safe-mode `stream-json` |
+| **Claude** | Official Claude Code browser sign-in; no API key handled by the extension | Every model Claude Code offers the account — aliases such as Opus and Sonnet plus specific versions — through safe-mode `stream-json` |
 | **Codex** | ChatGPT browser sign-in with multi-account support, stored in VS Code SecretStorage | Automatic Codex model discovery with HTTP/WebSocket Responses parity |
 | **LM Studio** | No authentication by default; optional local server token in VS Code SecretStorage | Native model metadata plus OpenAI-compatible streaming chat and function tools |
 | **OpenAI-Compatible** | Optional API token per endpoint in VS Code SecretStorage, bound to the endpoint URL | Ollama, llama.cpp server, vLLM, or any `/v1/chat/completions` server, with per-server metadata discovery |
@@ -45,6 +45,8 @@ Each provider has its own model-picker group and management command. Run **Model
 1. Install the official [Claude Code CLI](https://code.claude.com/docs/en/setup).
 2. Run **Model Bridge: Claude: Sign in with Browser**.
 3. Choose a model from the **Claude** group in VS Code Chat.
+
+The model list comes from the signed-in Claude Code CLI, the same catalog its own model picker shows: the latest-model aliases (Default, Opus, Sonnet, Fable, Haiku) and specific versions such as Opus 4.8 or Sonnet 4.6. Listing models makes no model request; the list is cached and refreshed every few hours or with **Refresh Models**. Each model's **Thinking Effort** options match the efforts it supports. Use **Quick Configure Models** or `modelBridge.claude.hiddenModels` to hide versions you do not use.
 
 Claude account limits come from Claude Code's local `/usage` command, which makes no model request, and from the rate-limit events streamed with each response. Claude requests remove API-key environment variables, disable Claude Code built-in tools, use safe mode, and remove permission-restricted temporary prompt files after every request. By default the configured instructions and VS Code tool catalog replace Claude Code's coding-agent system prompt (`modelBridge.claude.systemPrompt`); VS Code Chat supplies its own agent instructions. Optional compatible session continuation is disabled by default because it causes Claude Code to retain local session history.
 

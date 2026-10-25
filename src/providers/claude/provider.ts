@@ -1,10 +1,23 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import * as vscode from 'vscode';
 import type { UsageRecorder } from '../../usage/usageRecorder';
-import { getClaudeCliStatus, streamClaudeResponse, type ClaudeCliStatus, type ClaudeSystemPromptMode } from './cli';
+import {
+  fetchClaudeModelOptions,
+  getClaudeCliStatus,
+  streamClaudeResponse,
+  type ClaudeCliStatus,
+  type ClaudeModelOption,
+  type ClaudeSystemPromptMode
+} from './cli';
+import {
+  buildClaudeModelEntries,
+  filterVisibleEntries,
+  resolveModelEffort,
+  type ClaudeModelEntry
+} from './modelCatalog';
 import { ClaudeSessionStore } from './sessionStore';
 import { ClaudeToolCatalogStore } from './toolCatalog';
 import {
@@ -29,6 +42,7 @@ export interface ClaudeProviderConfig {
   maxOutputTokens: number;
   requestTimeoutMs: number;
   enabledModels: string[];
+  hiddenModels: string[];
   sessionContinuation: boolean;
   systemPromptMode: ClaudeSystemPromptMode;
 }
@@ -40,7 +54,7 @@ type RuntimeResponseOptions = vscode.ProvideLanguageModelChatResponseOptions & {
 
 type ModelConfigurationSchema = {
   readonly properties: {
-    readonly reasoningEffort: {
+    readonly reasoningEffort?: {
       readonly type: 'string';
       readonly title: 'Thinking Effort';
       readonly enum: readonly ClaudeEffort[];
@@ -75,6 +89,11 @@ const USAGE_DATA_PART_MIME = 'usage';
 const READY_STATUS_TTL_MS = 60_000;
 const UNAVAILABLE_MODELS_KEY = 'modelBridge.claude.unavailableModels';
 const UNAVAILABLE_MODEL_TTL_MS = 24 * 60 * 60_000;
+const MODEL_CATALOG_KEY = 'modelBridge.claude.modelCatalog';
+// Claude Code's catalog changes with releases and plans; a stale copy is shown at once and refreshed behind it.
+const MODEL_CATALOG_TTL_MS = 6 * 60 * 60_000;
+// Claude Code's catalog has no context sizes; the Context Size option and Claude Code's auto-compact bound them.
+const MODEL_LIMITS = { maxInputTokens: 1_000_000, maxOutputTokens: 128_000 };
 const MODEL_ACCESS_REJECTION = /requires usage credits|unavailable for this account|model.+(?:not available|not found|unsupported)|does not support this model/i;
 
 export class ClaudeModelProvider implements vscode.LanguageModelChatProvider, vscode.Disposable {
@@ -85,6 +104,9 @@ export class ClaudeModelProvider implements vscode.LanguageModelChatProvider, vs
   // keep recognizing tool markers already present in their history.
   private markerNonce = createMarkerNonce();
   private statusCache?: { claudePath: string; status: Promise<ClaudeCliStatus>; expiresAt: number };
+  private catalog?: StoredModelCatalog;
+  private catalogFetch?: { key: string; promise: Promise<ClaudeModelOption[]> };
+  private modelEntries = new Map<string, ClaudeModelEntry>();
   readonly onDidChangeLanguageModelChatInformation = this.modelsChanged.event;
 
   constructor(
@@ -100,6 +122,20 @@ export class ClaudeModelProvider implements vscode.LanguageModelChatProvider, vs
     this.modelsChanged.dispose();
   }
 
+  /** Re-reads Claude Code's model catalog, for example after a plan change or a Claude Code update. */
+  refreshModelCatalog(): void {
+    this.catalog = undefined;
+    void this.state?.update(MODEL_CATALOG_KEY, undefined);
+    this.refresh();
+  }
+
+  /** Every model Claude Code offers, including hidden ones, for the Quick Configure picker. */
+  async listModelChoices(): Promise<ClaudeModelEntry[]> {
+    const config = getClaudeProviderConfig();
+    const status = await this.getStatus(config.claudePath);
+    return buildClaudeModelEntries(status.installed && status.authenticated ? await this.getModelOptions(config, status) : undefined);
+  }
+
   refresh(): void {
     void this.state?.update(UNAVAILABLE_MODELS_KEY, undefined);
     this.sessionStore.clear();
@@ -107,6 +143,49 @@ export class ClaudeModelProvider implements vscode.LanguageModelChatProvider, vs
     this.markerNonce = createMarkerNonce();
     this.statusCache = undefined;
     this.modelsChanged.fire();
+  }
+
+  /**
+   * Claude Code's model catalog for this CLI, version, and account. A cached copy is returned at once and
+   * refreshed in the background when stale; undefined falls back to the built-in aliases.
+   */
+  private async getModelOptions(config: ClaudeProviderConfig, status: ClaudeCliStatus): Promise<ClaudeModelOption[] | undefined> {
+    const key = catalogKey(config.claudePath, status);
+    const cached = this.catalog ?? readStoredCatalog(this.state?.get(MODEL_CATALOG_KEY));
+    if (cached?.key === key) {
+      this.catalog = cached;
+      if (Date.now() - cached.fetchedAt > MODEL_CATALOG_TTL_MS) {
+        void this.fetchModelOptions(config.claudePath, key).then((models) => {
+          if (JSON.stringify(models) !== JSON.stringify(cached.models)) this.modelsChanged.fire();
+        }, () => undefined);
+      }
+      return cached.models;
+    }
+    try {
+      return await this.fetchModelOptions(config.claudePath, key);
+    } catch (error) {
+      this.output.warn('Claude Code model catalog unavailable; using built-in aliases', {
+        error: error instanceof Error ? error.message : String(error)
+      });
+      return undefined;
+    }
+  }
+
+  private fetchModelOptions(claudePath: string, key: string): Promise<ClaudeModelOption[]> {
+    if (this.catalogFetch?.key === key) return this.catalogFetch.promise;
+    const promise = fetchClaudeModelOptions(claudePath, vscode.workspace.workspaceFolders?.[0]?.uri.fsPath)
+      .then((models) => {
+        if (models.length === 0) throw new Error('Claude Code listed no models.');
+        this.catalog = { key, models, fetchedAt: Date.now() };
+        void this.state?.update(MODEL_CATALOG_KEY, this.catalog);
+        this.output.info('Claude Code model catalog loaded', { models: models.map((model) => model.value) });
+        return models;
+      })
+      .finally(() => {
+        if (this.catalogFetch?.promise === promise) this.catalogFetch = undefined;
+      });
+    this.catalogFetch = { key, promise };
+    return promise;
   }
 
   private getStatus(claudePath: string): Promise<ClaudeCliStatus> {
@@ -190,27 +269,29 @@ export class ClaudeModelProvider implements vscode.LanguageModelChatProvider, vs
       return [];
     }
 
-    const unavailableModels = this.getUnavailableModels();
-    return CLAUDE_MODELS
-      .filter((model) => config.enabledModels.includes(model.id) && !unavailableModels.has(model.id))
-      .map((model): ModelPickerChatInformation => {
-        const limits = resolveTokenLimits(model, config);
-        return {
-          id: toProviderModelId(model.id),
-          name: model.name,
-          family: 'claude',
-          version: '1.0.0',
-          maxInputTokens: limits.maxInputTokens,
-          maxOutputTokens: limits.maxOutputTokens,
-          tooltip: model.description,
-          detail: `Runs through the signed-in Claude Code CLI (${status.authMethod ?? 'authenticated'}).`,
-          configurationSchema: buildModelConfigurationSchema(config),
-          capabilities: {
-            imageInput: false,
-            toolCalling: true
-          }
-        };
-      });
+    const entries = buildClaudeModelEntries(await this.getModelOptions(config, status));
+    this.modelEntries = new Map(entries.map((entry) => [entry.value, entry]));
+    const limits = resolveTokenLimits(MODEL_LIMITS, config);
+    const visible = filterVisibleEntries(entries, config, this.getUnavailableModels());
+    // Never leave the group empty because of settings alone; Claude Code's default model always works.
+    const shown = visible.length > 0 ? visible : entries.filter((entry) => entry.value === 'default');
+    return shown
+      .map((entry): ModelPickerChatInformation => ({
+        id: toProviderModelId(entry.value),
+        name: entry.name,
+        family: entry.family,
+        version: entry.version,
+        maxInputTokens: limits.maxInputTokens,
+        maxOutputTokens: limits.maxOutputTokens,
+        tooltip: `${entry.description}\nRuns through the signed-in Claude Code CLI (${status.authMethod ?? 'authenticated'}).`,
+        detail: entry.detail,
+        // `?? []`: a model without effort support must not fall back to the default effort list.
+        configurationSchema: buildModelConfigurationSchema(config, entry.efforts ?? []),
+        capabilities: {
+          imageInput: false,
+          toolCalling: true
+        }
+      }));
   }
 
   async provideLanguageModelChatResponse(
@@ -223,7 +304,8 @@ export class ClaudeModelProvider implements vscode.LanguageModelChatProvider, vs
     const config = getClaudeProviderConfig();
     const selectedModel = parseProviderModelId(model.id, config.model);
     const runtimeOptions = options as RuntimeResponseOptions;
-    const effort = resolveEffortOption(runtimeOptions, config.defaultEffort);
+    const modelEntry = this.modelEntries.get(selectedModel);
+    const effort = resolveModelEffort(resolveEffortOption(runtimeOptions, config.defaultEffort), modelEntry);
     const contextSize = resolveContextSizeOption(runtimeOptions, config.defaultContextSize);
     const tools = normalizeTools(options.tools ?? []);
     const markerNonce = this.markerNonce;
@@ -340,7 +422,8 @@ export class ClaudeModelProvider implements vscode.LanguageModelChatProvider, vs
       const cacheWrites = usage.cacheCreationInputTokens ?? 0;
       this.usageRecorder?.recordRequest(messages, {
         provider: 'claude',
-        model: selectedModel,
+        // Aliases move to new models; the ledger keeps the model that actually answered.
+        model: usage.model ?? modelEntry?.resolvedModel ?? selectedModel,
         tools: tools.length,
         durationMs: Date.now() - startedAt,
         inputTokens: (usage.inputTokens ?? 0) + cacheReads + cacheWrites,
@@ -429,6 +512,7 @@ export function getClaudeProviderConfig(): ClaudeProviderConfig {
     maxOutputTokens: normalizePositiveInteger(config.get('maxOutputTokens', 32_000), 32_000),
     requestTimeoutMs: normalizeRequestTimeout(config.get('requestTimeoutSeconds', 600)) * 1_000,
     enabledModels: normalizeEnabledModels(config.get('enabledModels', CLAUDE_MODELS.map((model) => model.id))),
+    hiddenModels: normalizeModelList(config.get('hiddenModels', [])),
     sessionContinuation: config.get('sessionContinuation', false),
     systemPromptMode: config.get<string>('systemPrompt', 'minimal') === 'claudeCode' ? 'claudeCode' : 'minimal'
   };
@@ -445,25 +529,45 @@ export function resolveTokenLimits(
   return { maxInputTokens: contextWindow - maxOutputTokens, maxOutputTokens };
 }
 
-export function buildModelConfigurationSchema(config: ClaudeProviderConfig): ModelConfigurationSchema {
+const EFFORT_LABELS: Record<ClaudeEffort, string> = {
+  auto: 'Claude Code Default',
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  xhigh: 'Extra High',
+  max: 'Maximum'
+};
+const EFFORT_DESCRIPTIONS: Record<ClaudeEffort, string> = {
+  auto: 'Use the effort configured in Claude Code, as the official extension does.',
+  low: 'Fastest responses with minimal extended thinking.',
+  medium: 'Balanced speed and reasoning.',
+  high: 'Deeper reasoning for coding tasks.',
+  xhigh: 'Very deep reasoning for difficult tasks.',
+  max: 'Maximum available reasoning effort.'
+};
+
+/**
+ * Picker options for one model. `efforts` lists the explicit efforts the model accepts (all by default);
+ * an empty list means the model takes no effort, so the option is omitted.
+ */
+export function buildModelConfigurationSchema(
+  config: ClaudeProviderConfig,
+  efforts: readonly ClaudeEffort[] | undefined = CLAUDE_EFFORTS.filter((effort) => effort !== 'auto')
+): ModelConfigurationSchema {
+  const choices = efforts && efforts.length > 0 ? CLAUDE_EFFORTS.filter((effort) => effort === 'auto' || efforts.includes(effort)) : [];
   return {
     properties: {
-      reasoningEffort: {
-        type: 'string',
-        title: 'Thinking Effort',
-        enum: CLAUDE_EFFORTS,
-        enumItemLabels: ['Claude Code Default', 'Low', 'Medium', 'High', 'Extra High', 'Maximum'],
-        enumDescriptions: [
-          'Use the effort configured in Claude Code, as the official extension does.',
-          'Fastest responses with minimal extended thinking.',
-          'Balanced speed and reasoning.',
-          'Deeper reasoning for coding tasks.',
-          'Very deep reasoning for difficult tasks.',
-          'Maximum available reasoning effort.'
-        ],
-        default: config.defaultEffort,
-        group: 'navigation'
-      },
+      ...(choices.length > 0 ? {
+        reasoningEffort: {
+          type: 'string' as const,
+          title: 'Thinking Effort' as const,
+          enum: choices,
+          enumItemLabels: choices.map((effort) => EFFORT_LABELS[effort]),
+          enumDescriptions: choices.map((effort) => EFFORT_DESCRIPTIONS[effort]),
+          default: choices.includes(config.defaultEffort) ? config.defaultEffort : 'auto',
+          group: 'navigation' as const
+        }
+      } : {}),
       contextSize: {
         type: 'number',
         title: 'Context Size',
@@ -639,6 +743,36 @@ function normalizeRequestTimeout(value: unknown): number {
   return Math.min(3_600, Math.max(30, Math.floor(value)));
 }
 
+function normalizeModelList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? [...new Set(value.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0).map((entry) => entry.trim()))]
+    : [];
+}
+
+interface StoredModelCatalog {
+  key: string;
+  models: ClaudeModelOption[];
+  fetchedAt: number;
+}
+
+function readStoredCatalog(value: unknown): StoredModelCatalog | undefined {
+  if (!isRecord(value) || typeof value.key !== 'string' || typeof value.fetchedAt !== 'number' || !Array.isArray(value.models)) {
+    return undefined;
+  }
+  const models = value.models.filter((model): model is ClaudeModelOption => (
+    isRecord(model) && typeof model.value === 'string' && typeof model.displayName === 'string'
+  ));
+  return models.length > 0 ? { key: value.key, models, fetchedAt: value.fetchedAt } : undefined;
+}
+
+// The catalog depends on the CLI, its version, and the account's plan; the account is hashed before storage.
+function catalogKey(claudePath: string, status: ClaudeCliStatus): string {
+  return createHash('sha256')
+    .update([claudePath, status.version ?? '', status.account ?? '', status.subscriptionType ?? ''].join('\n'))
+    .digest('hex')
+    .slice(0, 24);
+}
+
 function normalizeEnabledModels(value: unknown): string[] {
   const knownModels = new Set(CLAUDE_MODELS.map((model) => model.id));
   if (!Array.isArray(value)) {
@@ -647,7 +781,7 @@ function normalizeEnabledModels(value: unknown): string[] {
   const models = [...new Set(value.filter((entry): entry is string => (
     typeof entry === 'string' && knownModels.has(entry as typeof CLAUDE_MODELS[number]['id'])
   )))];
-  return models.length > 0 ? models : ['default'];
+  return models;
 }
 
 /** Models to hide after Claude Code refuses the selected model for this account. */

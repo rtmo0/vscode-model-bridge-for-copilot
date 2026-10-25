@@ -121,6 +121,116 @@ export async function fetchClaudeUsageReport(executable: string): Promise<string
   return payload.result;
 }
 
+/** A model Claude Code offers to the signed-in account, as its `initialize` control response lists it. */
+export interface ClaudeModelOption {
+  /** Value for `--model`: an alias (`opus`) or a full model ID (`claude-opus-4-8`). */
+  value: string;
+  /** The model ID the value currently resolves to. */
+  resolvedModel?: string;
+  displayName: string;
+  description?: string;
+  /** Effort levels the model accepts; undefined when it accepts no `--effort`. */
+  effortLevels?: string[];
+}
+
+const MODEL_CATALOG_REQUEST_ID = 'model-bridge-models';
+
+/**
+ * Lists the models Claude Code offers to the signed-in account, the same catalog its own model picker uses.
+ * Only the `initialize` control request is sent and the process ends once it answers, so no model request
+ * is made and no tokens are used.
+ */
+export function fetchClaudeModelOptions(executable: string, cwd?: string, timeoutMs = 15_000): Promise<ClaudeModelOption[]> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(executable, [
+      '-p',
+      '--input-format', 'stream-json',
+      '--output-format', 'stream-json',
+      '--verbose',
+      '--safe-mode',
+      '--tools', '',
+      '--no-session-persistence'
+    ], {
+      cwd,
+      env: getClaudeSignInEnvironment(),
+      stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true
+    });
+    let buffer = '';
+    let stderr = '';
+    let settled = false;
+    const finish = (error: Error | undefined, models?: ClaudeModelOption[]) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      child.stdin.end();
+      if (child.exitCode === null && child.signalCode === null) child.kill();
+      if (error) reject(error);
+      else resolve(models ?? []);
+    };
+    const timeout = setTimeout(() => finish(new Error('Timed out while listing Claude Code models.')), timeoutMs);
+    timeout.unref();
+
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => {
+      buffer += chunk;
+      let newline = buffer.indexOf('\n');
+      while (newline >= 0) {
+        const line = buffer.slice(0, newline).trim();
+        buffer = buffer.slice(newline + 1);
+        const message = line ? parseJsonRecord(line) : undefined;
+        const response = isRecord(message?.response) ? message.response : undefined;
+        if (message?.type === 'control_response' && response?.request_id === MODEL_CATALOG_REQUEST_ID) {
+          if (response.subtype === 'success') {
+            finish(undefined, parseClaudeModelOptions(response.response));
+          } else {
+            finish(new Error(typeof response.error === 'string' ? sanitizeCliError(response.error) : 'Claude Code did not list its models.'));
+          }
+          return;
+        }
+        newline = buffer.indexOf('\n');
+      }
+    });
+    child.stderr.on('data', (chunk: string) => {
+      if (stderr.length < MAX_ERROR_LENGTH) stderr += chunk;
+    });
+    child.stdin.on('error', () => undefined);
+    child.once('error', (error: NodeJS.ErrnoException) => {
+      finish(new Error(error.code === 'ENOENT' ? `Claude Code was not found at "${executable}".` : error.message));
+    });
+    child.once('close', (code) => {
+      finish(new Error(sanitizeCliError(stderr) || `Claude Code exited with code ${code ?? -1} before listing its models.`));
+    });
+    child.stdin.write(`${JSON.stringify({
+      type: 'control_request',
+      request_id: MODEL_CATALOG_REQUEST_ID,
+      request: { subtype: 'initialize' }
+    })}\n`);
+  });
+}
+
+export function parseClaudeModelOptions(payload: unknown): ClaudeModelOption[] {
+  const models = isRecord(payload) && Array.isArray(payload.models) ? payload.models : [];
+  const seen = new Set<string>();
+  return models.flatMap((entry): ClaudeModelOption[] => {
+    if (!isRecord(entry) || typeof entry.value !== 'string' || !/^[\w.:[\]-]{1,128}$/.test(entry.value) || seen.has(entry.value)) {
+      return [];
+    }
+    seen.add(entry.value);
+    const levels = Array.isArray(entry.supportedEffortLevels)
+      ? entry.supportedEffortLevels.filter((level): level is string => typeof level === 'string')
+      : [];
+    return [{
+      value: entry.value,
+      resolvedModel: typeof entry.resolvedModel === 'string' && entry.resolvedModel ? entry.resolvedModel : undefined,
+      displayName: typeof entry.displayName === 'string' && entry.displayName.trim() ? entry.displayName.trim() : entry.value,
+      description: typeof entry.description === 'string' && entry.description.trim() ? entry.description.trim() : undefined,
+      effortLevels: entry.supportsEffort === true && levels.length > 0 ? levels : undefined
+    }];
+  });
+}
+
 export async function streamClaudeResponse(request: ClaudeCliRequest): Promise<void> {
   if (request.token.isCancellationRequested) {
     throw new vscode.CancellationError();
@@ -375,6 +485,10 @@ export function getClaudeSignInEnvironment(): NodeJS.ProcessEnv {
   delete environment.ANTHROPIC_AUTH_TOKEN;
   delete environment.CLAUDE_CODE_OAUTH_TOKEN;
   return environment;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function parseJsonRecord(value: string): Record<string, unknown> | undefined {

@@ -4,7 +4,7 @@
 
 - `src/extension.ts`: unified VS Code activation, isolated per-provider activation, and provider management.
 - `src/settingsMigration.ts`: one-time copy of legacy `anthropicForCopilot.*` and `codexModelProvider.*` settings.
-- `src/providers/claude/`: Claude Code provider (`provider.ts`), process lifecycle (`cli.ts`), stream protocol (`protocol.ts`), optional continuation (`sessionStore.ts`), append-only tool catalog (`toolCatalog.ts`), and usage display (`usageStatusBar.ts`).
+- `src/providers/claude/`: Claude Code provider (`provider.ts`), process lifecycle and model catalog listing (`cli.ts`), picker entries from the catalog (`modelCatalog.ts`), stream protocol (`protocol.ts`), optional continuation (`sessionStore.ts`), append-only tool catalog (`toolCatalog.ts`), and usage display (`usageStatusBar.ts`).
 - `src/providers/codex/`: full Codex provider, authentication, Responses transports, model discovery, usage, and tools. `provider.ts` owns the request flow; replay projection lives in `providerReplay.ts`, model alias/availability in `providerModelResolution.ts`, response parts and option helpers in `providerSupport.ts`, and tool-call latency/continuation tracking in `toolCallTracking.ts`.
 - `src/providers/lmstudio/`: local LM Studio provider (`provider.ts`) and commands (`integration.ts`).
 - `src/providers/openaiCompatible/`: shared `/v1/chat/completions` runtime (`protocol.ts` SSE and `<think>` parsing, `chatCompletions.ts` message conversion, streaming, picker options, reasoning effort) used by LM Studio, plus the OpenAI-Compatible endpoint provider (`provider.ts`), per-server model discovery (`discovery.ts`), and commands (`integration.ts`).
@@ -39,6 +39,7 @@
 - Use `--safe-mode`, not `--bare`, and keep built-in tools disabled.
 - Temporary prompt files must be permission-restricted and removed after success, failure, timeout, and cancellation.
 - Continuation is opt-in, bounded, in-memory, append-only, and requires an identical request envelope.
+- List models only through Claude Code's `initialize` control request (no user message, same safe flags); fall back to the built-in aliases when it fails, and pass only efforts the model reports.
 
 ## Codex constraints
 
