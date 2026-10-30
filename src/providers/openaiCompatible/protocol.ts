@@ -292,7 +292,9 @@ function parseUsage(value: unknown): ChatCompletionUsage | undefined {
   if (promptTokens === undefined && completionTokens === undefined && totalTokens === 0) {
     return undefined;
   }
-  const cachedPromptTokens = isRecord(value.prompt_tokens_details) ? readTokenCount(value.prompt_tokens_details.cached_tokens) : undefined;
+  // DeepSeek also reports cache hits as `prompt_cache_hit_tokens`; its `prompt_tokens` already include them.
+  const cachedPromptTokens = (isRecord(value.prompt_tokens_details) ? readTokenCount(value.prompt_tokens_details.cached_tokens) : undefined)
+    ?? readTokenCount(value.prompt_cache_hit_tokens);
   const reasoningTokens = isRecord(value.completion_tokens_details) ? readTokenCount(value.completion_tokens_details.reasoning_tokens) : undefined;
   return {
     promptTokens: promptTokens ?? 0,

@@ -4,12 +4,15 @@
 
 - `src/extension.ts`: unified VS Code activation, isolated per-provider activation, and provider management.
 - `src/settingsMigration.ts`: one-time copy of legacy `anthropicForCopilot.*` and `codexModelProvider.*` settings.
+- `src/loopGuard.ts`: opt-in failure-loop guard shared by every provider (adapted from TokenEconomizer, Apache-2.0; see `THIRD_PARTY_NOTICES.md`).
 - `src/providers/claude/`: Claude Code provider (`provider.ts`), process lifecycle and model catalog listing (`cli.ts`), picker entries from the catalog (`modelCatalog.ts`), stream protocol (`protocol.ts`), optional continuation (`sessionStore.ts`), append-only tool catalog (`toolCatalog.ts`), and usage display (`usageStatusBar.ts`).
 - `src/providers/codex/`: full Codex provider, authentication, Responses transports, model discovery, usage, and tools. `provider.ts` owns the request flow; replay projection lives in `providerReplay.ts`, model alias/availability in `providerModelResolution.ts`, response parts and option helpers in `providerSupport.ts`, and tool-call latency/continuation tracking in `toolCallTracking.ts`.
+- `src/providers/deepseek/`: DeepSeek API provider (`provider.ts`), model table, list prices and peak hours (`models.ts`), balance status bar (`balanceStatusBar.ts`), and commands (`integration.ts`); it uses the shared chat-completions runtime.
 - `src/providers/lmstudio/`: local LM Studio provider (`provider.ts`) and commands (`integration.ts`).
-- `src/providers/openaiCompatible/`: shared `/v1/chat/completions` runtime (`protocol.ts` SSE and `<think>` parsing, `chatCompletions.ts` message conversion, streaming, picker options, reasoning effort) used by LM Studio, plus the OpenAI-Compatible endpoint provider (`provider.ts`), per-server model discovery (`discovery.ts`), and commands (`integration.ts`).
+- `src/providers/openaiCompatible/`: shared `/v1/chat/completions` runtime (`protocol.ts` SSE and `<think>` parsing, `chatCompletions.ts` message conversion, streaming, picker options, reasoning effort) used by LM Studio, plus the OpenAI-Compatible endpoint provider (`provider.ts`), per-server model discovery (`discovery.ts`), and commands (`integration.ts`). `reasoningReplay.ts` keeps reasoning in memory for servers that need `reasoning_content` back (DeepSeek).
 - `src/usage/`: usage ledger (`usageLedger.ts`, daily JSONL in global storage), report aggregation (`usageReport.ts`), provider-facing recorder (`usageRecorder.ts`), and the report webview (`usageReportPanel.ts` with `media/usageReport.js` and `.css`).
-- `test/smokeManifest.mjs`: manifest and command registration checks; `test/providers/<provider>/` contains provider-specific smoke suites.
+- `test/smokeManifest.mjs`: manifest and command registration checks; `test/smokeLoopGuard.mjs`: loop guard; `test/providers/<provider>/` contains provider-specific smoke suites.
+- `docs/how-it-works.svg` and `docs/token-savings.svg`: README diagrams; re-render the matching `.png` files (920px wide at 2x, light theme) after editing them.
 - `out/`: generated bundle; do not edit manually.
 
 ## Commands
@@ -17,8 +20,9 @@
 - `npm install`: install dependencies.
 - `npm run check`: TypeScript type-check.
 - `npm run compile`: type-check and bundle.
-- `npm run test:claude`, `npm run test:codex`, `npm run test:lmstudio`, `npm run test:openai-compatible`: provider-specific smoke suites.
+- `npm run test:claude`, `npm run test:codex`, `npm run test:deepseek`, `npm run test:lmstudio`, `npm run test:openai-compatible`: provider-specific smoke suites.
 - `npm run test:usage`: usage ledger, report, and webview panel.
+- `npm run test:loop-guard`: loop guard.
 - `npm run test:smoke`: all suites.
 - `npm run package:vsix`: package a VSIX.
 
@@ -32,6 +36,7 @@
 - Diagnostics must be bounded and safe to copy.
 - Record usage through `UsageRecorder` after a completed request: counts, model, and a salted conversation hash only; recording must never affect a response. Normalize `inputTokens` to the full prompt including cache reads and writes.
 - The usage webview loads only its own `media/` files under a nonce CSP and inserts data with `textContent`.
+- The loop guard is opt-in and keeps no state: it recomputes from each request's history, so its redirects land at the same place in every later request and histories stay append-only for prompt caches and continuation. It reads tool results only in memory, logs counts only, never stops a turn, and usage recording receives the original messages.
 
 ## Claude constraints
 
@@ -62,3 +67,10 @@
 - One unreachable endpoint must not hide models from the others.
 - Offer a model to Agent mode only when server metadata or an explicit endpoint override reports tool support.
 - Ollama `/v1` requests cannot change `num_ctx`; advertise the loaded or configured context, never the model maximum.
+
+## DeepSeek constraints
+
+- The API key lives only in VS Code SecretStorage, keyed by `modelBridge.deepseek.baseURL` (machine-scoped), and is sent only to that URL.
+- Capabilities and prices come from the published model table in `models.ts`; unknown models stay text-only and have no cost.
+- Thinking with tools needs earlier `reasoning_content` back: keep it only in the bounded in-memory store, never log it, and run a request without thinking (not fail it) when the reasoning is unavailable or DeepSeek rejects it.
+- Send `thinking: disabled` (and no effort) for Off and for required tool calls; send nothing for the model default effort.

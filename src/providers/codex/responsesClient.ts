@@ -1264,14 +1264,14 @@ export function createResponsesServerEventHandler(
     if (event.type === 'response.function_call_arguments.done') {
       const functionCall = functionCallsByItemId.get(event.item_id);
       if (functionCall) {
-        options.onToolCallArgumentsDone?.(
-          functionCall.callId,
-          firstNonEmptyString(functionCall.name, event.name)
-        );
+        // The SDK no longer types `name` on this event, but the backend may still send it.
+        const eventName = (event as { name?: unknown }).name;
+        const name = firstNonEmptyString(functionCall.name, typeof eventName === 'string' ? eventName : '');
+        options.onToolCallArgumentsDone?.(functionCall.callId, name);
         reportFunctionCall(
           event.item_id,
           functionCall.callId,
-          firstNonEmptyString(functionCall.name, event.name),
+          name,
           event.arguments,
           functionCall.namespace
         );

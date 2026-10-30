@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 500" width="920" height="500" role="img" aria-labelledby="title desc">
+  <title id="title">How Model Bridge works</title>
+  <desc id="desc">VS Code Chat and Agent mode send the prompt, the conversation and the workspace tools to Model Bridge, which runs inside VS Code. It speaks each provider's protocol, keeps the prompt cache warm, watches for stuck turns and counts tokens. Requests go to Claude, Codex, DeepSeek, LM Studio or an OpenAI-compatible server, and the answer, thinking, tool calls and usage come back to VS Code.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f6f8fa; }
+      .card { fill: #ffffff; stroke: #d0d7de; }
+      .bridge { fill: #ffffff; stroke: url(#bridge); }
+      .step { fill: #fff4ec; stroke: #f6c8a8; }
+      .cloud { fill: #eef6ff; stroke: #9cc7f5; }
+      .local { fill: #effaf6; stroke: #9fd9c2; }
+      .title { fill: #1f2328; font: 600 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+      .text { fill: #1f2328; font: 500 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+      .note { fill: #59636e; font: 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+      .label { fill: #59636e; font: 600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; letter-spacing: .06em; }
+      .arrow { stroke: #8c959f; stroke-width: 1.6; fill: none; }
+      .loop { stroke: #8c959f; stroke-width: 1.6; fill: none; stroke-dasharray: 4 4; }
+      .head { fill: #8c959f; }
+      @media (prefers-color-scheme: dark) {
+        .bg { fill: #0d1117; }
+        .card { fill: #161b22; stroke: #3d444d; }
+        .bridge { fill: #161b22; }
+        .step { fill: #2d1d14; stroke: #7a4a2c; }
+        .cloud { fill: #0f2338; stroke: #2f5f91; }
+        .local { fill: #0f2a22; stroke: #2c6e56; }
+        .title, .text { fill: #e6edf3; }
+        .note, .label { fill: #9198a1; }
+        .arrow, .loop { stroke: #6e7681; }
+        .head { fill: #6e7681; }
+      }
+    </style>
+    <linearGradient id="bridge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f2a06f"/>
+      <stop offset=".5" stop-color="#b9a7d8"/>
+      <stop offset="1" stop-color="#62d5ee"/>
+    </linearGradient>
+    <marker id="tip" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="head" d="M0 0L10 5L0 10z"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="920" height="500" rx="16"/>
+
+  <!-- VS Code -->
+  <text class="label" x="24" y="40">IN · VS CODE</text>
+  <rect class="card" x="24" y="56" width="210" height="52" rx="12"/>
+  <text class="text" x="40" y="78">Chat or Agent prompt</text>
+  <text class="note" x="40" y="96">your message and context</text>
+  <rect class="card" x="24" y="120" width="210" height="52" rx="12"/>
+  <text class="text" x="40" y="142">Conversation so far</text>
+  <text class="note" x="40" y="160">resent with every tool step</text>
+  <rect class="card" x="24" y="184" width="210" height="52" rx="12"/>
+  <text class="text" x="40" y="206">Workspace tools</text>
+  <text class="note" x="40" y="224">edit, terminal, tests, MCP</text>
+  <rect class="card" x="24" y="248" width="210" height="52" rx="12"/>
+  <text class="text" x="40" y="270">Model picker</text>
+  <text class="note" x="40" y="288">one group per provider</text>
+
+  <path class="arrow" d="M234 82H286" marker-end="url(#tip)"/>
+  <path class="arrow" d="M234 146H286" marker-end="url(#tip)"/>
+  <path class="arrow" d="M234 210H286" marker-end="url(#tip)"/>
+  <path class="arrow" d="M234 274H286" marker-end="url(#tip)"/>
+
+  <!-- Model Bridge -->
+  <rect class="bridge" x="292" y="40" width="280" height="300" rx="14" stroke-width="2"/>
+  <text class="title" x="308" y="68">Model Bridge</text>
+  <text class="note" x="308" y="88">inside VS Code, on your machine</text>
+  <rect class="step" x="308" y="102" width="248" height="50" rx="10"/>
+  <text class="text" x="324" y="123">1 · Speak each provider's protocol</text>
+  <text class="note" x="324" y="141">Claude Code, Responses, Chat API</text>
+  <rect class="step" x="308" y="160" width="248" height="50" rx="10"/>
+  <text class="text" x="324" y="181">2 · Keep the prompt cache warm</text>
+  <text class="note" x="324" y="199">stable prefix, only new steps sent</text>
+  <rect class="step" x="308" y="218" width="248" height="50" rx="10"/>
+  <text class="text" x="324" y="239">3 · Watch for stuck turns</text>
+  <text class="note" x="324" y="257">optional loop guard redirect</text>
+  <rect class="step" x="308" y="276" width="248" height="50" rx="10"/>
+  <text class="text" x="324" y="297">4 · Count every token</text>
+  <text class="note" x="324" y="315">status bar and usage report</text>
+
+  <path class="arrow" d="M572 190H630" marker-end="url(#tip)"/>
+  <text class="note" x="578" y="180">requests</text>
+
+  <!-- Models -->
+  <text class="label" x="636" y="40">MODELS</text>
+  <rect class="cloud" x="636" y="56" width="260" height="44" rx="12"/>
+  <text class="text" x="652" y="75">Claude</text>
+  <text class="note" x="652" y="91">Claude Code · your subscription</text>
+  <rect class="cloud" x="636" y="108" width="260" height="44" rx="12"/>
+  <text class="text" x="652" y="127">Codex</text>
+  <text class="note" x="652" y="143">ChatGPT sign-in · Responses API</text>
+  <rect class="cloud" x="636" y="160" width="260" height="44" rx="12"/>
+  <text class="text" x="652" y="179">DeepSeek</text>
+  <text class="note" x="652" y="195">API key · 1M context · thinking</text>
+  <rect class="local" x="636" y="212" width="260" height="44" rx="12"/>
+  <text class="text" x="652" y="231">LM Studio</text>
+  <text class="note" x="652" y="247">local models on this machine</text>
+  <rect class="local" x="636" y="264" width="260" height="44" rx="12"/>
+  <text class="text" x="652" y="283">OpenAI-Compatible</text>
+  <text class="note" x="652" y="299">Ollama, llama.cpp, vLLM, any /v1</text>
+
+  <!-- Back in VS Code -->
+  <path class="arrow" d="M766 308V386" marker-end="url(#tip)"/>
+  <text class="note" x="776" y="352">streamed back</text>
+  <text class="label" x="24" y="378">OUT · BACK IN VS CODE</text>
+  <rect class="card" x="24" y="392" width="280" height="52" rx="12"/>
+  <text class="text" x="40" y="414">Answer and thinking</text>
+  <text class="note" x="40" y="432">streamed as the model writes</text>
+  <rect class="card" x="320" y="392" width="280" height="52" rx="12"/>
+  <text class="text" x="336" y="414">Tool calls</text>
+  <text class="note" x="336" y="432">VS Code asks, runs them, sends results</text>
+  <rect class="card" x="616" y="392" width="280" height="52" rx="12"/>
+  <text class="text" x="632" y="414">Usage</text>
+  <text class="note" x="632" y="432">limits, balance, cost and cache hits</text>
+
+  <path class="loop" d="M460 392V362H129V306" marker-end="url(#tip)"/>
+  <text class="note" x="140" y="354">tool results join the conversation · next step</text>
+
+  <text class="note" x="24" y="478">VS Code runs every tool. Keys stay in VS Code SecretStorage, Claude sign-in stays with Claude Code, and logs keep counts, never prompts or code.</text>
+</svg>

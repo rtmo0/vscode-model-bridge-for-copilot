@@ -10,7 +10,7 @@
     { key: 'cachedInputTokens', name: 'Input from cache', color: 'var(--series-2)' },
     { key: 'outputTokens', name: 'Output', color: 'var(--series-3)' }
   ];
-  const PROVIDER_LABELS = { claude: 'Claude', codex: 'Codex', lmstudio: 'LM Studio', openaiCompatible: 'OpenAI-Compatible' };
+  const PROVIDER_LABELS = { claude: 'Claude', codex: 'Codex', deepseek: 'DeepSeek', lmstudio: 'LM Studio', openaiCompatible: 'OpenAI-Compatible' };
   const MISS_HELP = 'Agent tool steps with at least 8K input where less than half was read from the prompt cache. '
     + 'The conversation prefix changed, so the whole history was billed again.';
 

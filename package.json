@@ -1,7 +1,7 @@
 {
   "name": "model-bridge-for-copilot",
   "displayName": "Model Bridge for Copilot - Claude, Codex & Local LLMs",
-  "description": "Use Claude subscriptions, ChatGPT Codex, LM Studio, Ollama, llama.cpp, vLLM, and other OpenAI-compatible models in native VS Code Chat and Agent mode.",
+  "description": "Use Claude subscriptions, ChatGPT Codex, DeepSeek, LM Studio, Ollama, llama.cpp, vLLM, and other OpenAI-compatible models in native VS Code Chat and Agent mode.",
   "version": "1.4.1",
   "publisher": "samarin-aa-aka-rtm00",
   "icon": "assets/model-bridge-for-copilot.png",
@@ -44,11 +44,13 @@
     "ollama",
     "llama.cpp",
     "vllm",
-    "openai-compatible"
+    "openai-compatible",
+    "deepseek"
   ],
   "activationEvents": [
     "onLanguageModelChatProvider:model-bridge-claude",
     "onLanguageModelChatProvider:model-bridge-codex",
+    "onLanguageModelChatProvider:model-bridge-deepseek",
     "onLanguageModelChatProvider:model-bridge-lmstudio",
     "onLanguageModelChatProvider:model-bridge-openai-compatible",
     "onStartupFinished"
@@ -62,7 +64,7 @@
     "check": "tsc -p ./ --noEmit",
     "compile": "npm run check && node esbuild.mjs",
     "build": "node esbuild.mjs",
-    "test:smoke": "node test/smokeManifest.mjs && npm run test:claude && npm run test:codex && npm run test:lmstudio && npm run test:openai-compatible && npm run test:usage",
+    "test:smoke": "node test/smokeManifest.mjs && npm run test:loop-guard && npm run test:claude && npm run test:codex && npm run test:lmstudio && npm run test:openai-compatible && npm run test:deepseek && npm run test:usage",
     "package:vsix": "vsce package --no-dependencies",
     "package": "vsce package --no-dependencies",
     "watch": "tsc -watch -p ./",
@@ -70,15 +72,17 @@
     "test:codex": "node test/providers/codex/smokeCodexProtocol.mjs && node test/providers/codex/smokeCodexRequestBuilder.mjs && node test/providers/codex/smokePromptCacheReplay.mjs && node test/providers/codex/smokeResponsesClient.mjs && node test/providers/codex/smokeConversationReuse.mjs && node test/providers/codex/smokeAccountUsage.mjs && node test/providers/codex/smokeAuth.mjs && node test/providers/codex/smokeToolCallTracking.mjs && node test/providers/codex/smokeModelResolution.mjs",
     "test:lmstudio": "node test/providers/lmstudio/smokeLmStudioProvider.mjs",
     "test:usage": "node test/usage/smokeUsage.mjs",
+    "test:loop-guard": "node test/smokeLoopGuard.mjs",
+    "test:deepseek": "node test/providers/deepseek/smokeDeepSeekProvider.mjs",
     "test:openai-compatible": "node test/providers/openaiCompatible/smokeChatCompletionProtocol.mjs && node test/providers/openaiCompatible/smokeOpenAICompatibleProvider.mjs",
     "test:claude": "node test/providers/claude/smokeClaudeProtocol.mjs && node test/providers/claude/smokeClaudeCli.mjs && node test/providers/claude/smokeClaudeSessionStore.mjs && node test/providers/claude/smokeClaudeToolCatalog.mjs && node test/providers/claude/smokeClaudeProviderOptions.mjs && node test/providers/claude/smokeClaudeUsageStatus.mjs && node test/providers/claude/smokeClaudeModelCatalog.mjs"
   },
   "devDependencies": {
-    "@types/node": "^22.15.30",
+    "@types/node": "^22.20.5",
     "@types/vscode": "^1.104.0",
-    "@vscode/vsce": "^4.0.0",
-    "esbuild": "^0.25.5",
-    "typescript": "^5.9.2"
+    "@vscode/vsce": "^4.1.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
   },
   "contributes": {
     "authentication": [
@@ -100,6 +104,11 @@
         "vendor": "model-bridge-codex",
         "displayName": "Codex",
         "managementCommand": "modelBridge.codex.manage"
+      },
+      {
+        "vendor": "model-bridge-deepseek",
+        "displayName": "DeepSeek",
+        "managementCommand": "modelBridge.deepseek.manage"
       },
       {
         "vendor": "model-bridge-lmstudio",
@@ -376,6 +385,61 @@
         "command": "modelBridge.lmstudio.testConnection",
         "title": "Test Connection",
         "category": "Model Bridge: LM Studio"
+      },
+      {
+        "command": "modelBridge.deepseek.manage",
+        "title": "Manage",
+        "category": "Model Bridge: DeepSeek"
+      },
+      {
+        "command": "modelBridge.deepseek.setApiKey",
+        "title": "Set API Key",
+        "category": "Model Bridge: DeepSeek"
+      },
+      {
+        "command": "modelBridge.deepseek.clearApiKey",
+        "title": "Clear API Key",
+        "category": "Model Bridge: DeepSeek"
+      },
+      {
+        "command": "modelBridge.deepseek.showBalance",
+        "title": "Show Balance",
+        "category": "Model Bridge: DeepSeek"
+      },
+      {
+        "command": "modelBridge.deepseek.openPlatform",
+        "title": "Open DeepSeek Platform",
+        "category": "Model Bridge: DeepSeek"
+      },
+      {
+        "command": "modelBridge.deepseek.refreshModels",
+        "title": "Refresh Models",
+        "category": "Model Bridge: DeepSeek"
+      },
+      {
+        "command": "modelBridge.deepseek.testConnection",
+        "title": "Test Connection",
+        "category": "Model Bridge: DeepSeek"
+      },
+      {
+        "command": "modelBridge.deepseek.doctor",
+        "title": "Run Doctor",
+        "category": "Model Bridge: DeepSeek"
+      },
+      {
+        "command": "modelBridge.deepseek.openDocumentation",
+        "title": "Open Documentation",
+        "category": "Model Bridge: DeepSeek"
+      },
+      {
+        "command": "modelBridge.deepseek.openLogs",
+        "title": "Open Logs",
+        "category": "Model Bridge: DeepSeek"
+      },
+      {
+        "command": "modelBridge.deepseek.openSettings",
+        "title": "Open Settings",
+        "category": "Model Bridge: DeepSeek"
       },
       {
         "command": "modelBridge.openaiCompatible.manage",
@@ -927,6 +991,38 @@
           "default": {},
           "description": "Optional local USD pricing per 1M tokens to override the built-in official pricing used for estimated cost display."
         },
+        "modelBridge.deepseek.baseURL": {
+          "type": "string",
+          "default": "https://api.deepseek.com",
+          "scope": "machine",
+          "description": "DeepSeek API base URL. The API key is stored in VS Code SecretStorage for this URL only, so changing it requires setting the key again. Machine-scoped, so workspace settings cannot redirect requests."
+        },
+        "modelBridge.deepseek.maxOutputTokens": {
+          "type": "integer",
+          "default": 65536,
+          "minimum": 1,
+          "maximum": 393216,
+          "description": "Output-token limit for DeepSeek requests, including thinking. The default is DeepSeek's thinking-mode default; it is reserved from the context window."
+        },
+        "modelBridge.deepseek.temperature": {
+          "type": "number",
+          "default": 0.2,
+          "minimum": 0,
+          "maximum": 2,
+          "description": "Default temperature. DeepSeek ignores it while thinking is on, so it applies only with Thinking Effort set to Off."
+        },
+        "modelBridge.deepseek.requestTimeoutSeconds": {
+          "type": "integer",
+          "default": 600,
+          "minimum": 30,
+          "maximum": 3600,
+          "description": "DeepSeek request timeout."
+        },
+        "modelBridge.deepseek.balanceStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the DeepSeek account balance in the status bar. It refreshes on startup, every 5 minutes, and after requests."
+        },
         "modelBridge.lmstudio.baseURL": {
           "type": "string",
           "default": "http://127.0.0.1:1234/v1",
@@ -1046,6 +1142,26 @@
           "maximum": 3600,
           "description": "OpenAI-compatible request timeout."
         },
+        "modelBridge.loopGuard.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Watch Agent mode turns on every Model Bridge provider for failure loops: many tool calls with repeated edits and the same failure coming back. When a turn looks stuck, the model gets one short note, built only from its own actions, to try a different approach; if it is still stuck afterwards, the response says so. The guard never stops a turn and keeps no data. Adapted from [TokenEconomizer](https://github.com/microsoft/TokenEconomizer)."
+        },
+        "modelBridge.loopGuard.sensitivity": {
+          "type": "string",
+          "default": "default",
+          "enum": [
+            "conservative",
+            "default",
+            "aggressive"
+          ],
+          "enumDescriptions": [
+            "Act only after 28 tool calls with 8 failing outputs and 30% repeated failures.",
+            "Act after 20 tool calls with 6 failing outputs and 20% repeated failures.",
+            "Act after 14 tool calls with 4 failing outputs and 12% repeated failures."
+          ],
+          "description": "How much evidence of a failure loop the loop guard needs before it steps in."
+        },
         "modelBridge.usage.recordRequests": {
           "type": "boolean",
           "default": true,
@@ -1062,9 +1178,9 @@
     }
   },
   "dependencies": {
-    "https-proxy-agent": "^7.0.6",
-    "openai": "7.8.0",
-    "undici": "^7.29.0",
+    "https-proxy-agent": "^9.1.0",
+    "openai": "7.45.1",
+    "undici": "^7.30.1",
     "ws": "^8.21.0"
   }
 }

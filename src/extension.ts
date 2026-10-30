@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { activateClaude } from './providers/claude/integration';
 import { activateCodex } from './providers/codex/integration';
+import { activateDeepSeek } from './providers/deepseek/integration';
 import { activateLmStudio } from './providers/lmstudio/integration';
 import { activateOpenAICompatible } from './providers/openaiCompatible/integration';
 import { SUPPORT_URL } from './providers/managementMenu';
@@ -36,6 +37,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   await activateProvider(output, 'Claude', () => activateClaude(context, usage));
   await activateProvider(output, 'LM Studio', () => activateLmStudio(context, usage));
   await activateProvider(output, 'OpenAI-Compatible', () => activateOpenAICompatible(context, usage));
+  await activateProvider(output, 'DeepSeek', () => activateDeepSeek(context, usage));
   await activateProvider(output, 'Codex', () => activateCodex(context, usage));
 }
 
@@ -54,6 +56,7 @@ async function showProviderManager(): Promise<void> {
   const selection = await vscode.window.showQuickPick([
     { label: '$(sparkle) Claude', description: 'Claude Code subscription sign-in', command: 'modelBridge.claude.manage' },
     { label: '$(cloud) Codex', description: 'ChatGPT Codex sign-in and Responses API', command: 'modelBridge.codex.manage' },
+    { label: '$(telescope) DeepSeek', description: 'DeepSeek API key and balance', command: 'modelBridge.deepseek.manage' },
     { label: '$(server) LM Studio', description: 'Local LM Studio models', command: 'modelBridge.lmstudio.manage' },
     { label: '$(plug) OpenAI-Compatible', description: 'Ollama, llama.cpp, vLLM, and other servers', command: 'modelBridge.openaiCompatible.manage' },
     { label: '', kind: vscode.QuickPickItemKind.Separator, command: '' },
@@ -67,6 +70,7 @@ async function showDiagnosticsManager(): Promise<void> {
   const selection = await vscode.window.showQuickPick([
     { label: '$(sparkle) Claude Doctor', command: 'modelBridge.claude.doctor' },
     { label: '$(cloud) Codex Doctor', command: 'modelBridge.codex.doctor' },
+    { label: '$(telescope) DeepSeek Doctor', command: 'modelBridge.deepseek.doctor' },
     { label: '$(server) LM Studio Doctor', command: 'modelBridge.lmstudio.doctor' },
     { label: '$(plug) OpenAI-Compatible Doctor', command: 'modelBridge.openaiCompatible.doctor' }
   ], { title: 'Model Bridge Diagnostics', placeHolder: 'Choose a provider diagnostic' });

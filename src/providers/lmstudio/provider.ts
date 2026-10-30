@@ -24,6 +24,7 @@ import {
   type RuntimeResponseOptions
 } from '../openaiCompatible/chatCompletions';
 
+import { applyLoopGuard, reportLoopGuard } from '../../loopGuard';
 import type { UsageRecorder } from '../../usage/usageRecorder';
 
 export { isInsecureRemoteURL } from '../openaiCompatible/chatCompletions';
@@ -157,11 +158,13 @@ export class LmStudioModelProvider implements vscode.LanguageModelChatProvider, 
     const requestModel = fromProviderModelId(model.id);
     const runtimeOptions = options as RuntimeResponseOptions;
     const reasoningEffort = resolveReasoningEffort(runtimeOptions, this.reasoningByModel.get(requestModel));
+    const guarded = applyLoopGuard(messages);
+    reportLoopGuard(guarded, this.output, progress);
     const result = await streamChatCompletion({
       serverName: 'LM Studio',
       url: `${config.baseURL}/chat/completions`,
       headers: await this.getHeaders(),
-      body: buildChatCompletionBody(requestModel, messages, options, {
+      body: buildChatCompletionBody(requestModel, guarded.messages, options, {
         temperature: resolveTemperature(runtimeOptions, config.temperature),
         maxTokens: Math.min(config.maxOutputTokens, model.maxOutputTokens),
         reasoningEffort

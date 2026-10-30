@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { applyLoopGuard, reportLoopGuard } from '../../loopGuard';
 import type { UsageRecorder } from '../../usage/usageRecorder';
 import {
   buildChatCompletionBody,
@@ -166,11 +167,13 @@ export class OpenAICompatibleModelProvider implements vscode.LanguageModelChatPr
     }
     const runtimeOptions = options as RuntimeResponseOptions;
     const reasoningEffort = resolveReasoningEffort(runtimeOptions, this.reasoningByModel.get(model.id));
+    const guarded = applyLoopGuard(messages);
+    reportLoopGuard(guarded, this.output, progress);
     const result = await streamChatCompletion({
       serverName: endpoint.name,
       url: `${endpoint.baseURL}/chat/completions`,
       headers: await this.getHeaders(endpoint),
-      body: buildChatCompletionBody(modelId, messages, options, {
+      body: buildChatCompletionBody(modelId, guarded.messages, options, {
         temperature: resolveTemperature(runtimeOptions, config.temperature),
         maxTokens: Math.min(config.maxOutputTokens, model.maxOutputTokens),
         reasoningEffort

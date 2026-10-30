@@ -100,6 +100,7 @@ try {
             export class LanguageModelDataPart { constructor(data,mimeType){Object.assign(this,{data,mimeType});} static json(value,mimeType){return {value,mimeType};} }
             globalThis.__openAICompatibleVscodeTest = { LanguageModelTextPart };
             export const LanguageModelChatMessageRole={User:1,Assistant:2};
+            export const LanguageModelChatMessage={ User(text){ return { role: 1, name: undefined, content: [new LanguageModelTextPart(text)] }; } };
             export const LanguageModelChatToolMode={Auto:1,Required:2};
             export const commands={async executeCommand(){}};
             export const window={

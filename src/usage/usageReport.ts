@@ -72,12 +72,13 @@ export interface ConversationDetail {
 export const PROVIDER_LABELS: Record<UsageProvider, string> = {
   claude: 'Claude',
   codex: 'Codex',
+  deepseek: 'DeepSeek',
   lmstudio: 'LM Studio',
   openaiCompatible: 'OpenAI-Compatible'
 };
 
 /** Providers whose usage reports prompt-cache reads; local servers usually do not. */
-const CACHING_PROVIDERS: ReadonlySet<UsageProvider> = new Set(['claude', 'codex']);
+const CACHING_PROVIDERS: ReadonlySet<UsageProvider> = new Set(['claude', 'codex', 'deepseek']);
 const CACHE_MISS_MIN_INPUT = 8_000;
 const CACHE_MISS_MAX_CACHED_SHARE = 0.5;
 const MODEL_ROWS = 10;

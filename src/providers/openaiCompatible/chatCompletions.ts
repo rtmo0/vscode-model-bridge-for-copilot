@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import * as vscode from 'vscode';
 import { ChatCompletionStreamParser, type ChatCompletionUsage } from './protocol';
+import type { AssistantReplayKey } from './reasoningReplay';
 
 /** Shared `/v1/chat/completions` runtime for LM Studio and the OpenAI-compatible endpoint provider. */
 
@@ -22,23 +23,30 @@ type VSCodeWithThinkingPart = typeof vscode & {
   LanguageModelThinkingPart?: new (value: string | string[], id?: string) => vscode.LanguageModelResponsePart;
 };
 
-/** Public reasoning settings, as LM Studio publishes them in `capabilities.reasoning.allowed_options`. */
-export type ReasoningOption = 'off' | 'on' | 'low' | 'medium' | 'high';
+/** Public reasoning settings, as LM Studio publishes them in `capabilities.reasoning.allowed_options`; DeepSeek adds `max`. */
+export type ReasoningOption = 'off' | 'on' | 'low' | 'medium' | 'high' | 'max';
 
 export interface ReasoningCapability {
   options: ReasoningOption[];
   default: ReasoningOption;
 }
 
-const REASONING_OPTIONS: readonly ReasoningOption[] = ['off', 'on', 'low', 'medium', 'high'];
-const REASONING_LABELS: Record<ReasoningOption, string> = { off: 'Off', on: 'On', low: 'Low', medium: 'Medium', high: 'High' };
+const REASONING_OPTIONS: readonly ReasoningOption[] = ['off', 'on', 'low', 'medium', 'high', 'max'];
+const REASONING_LABELS: Record<ReasoningOption, string> = { off: 'Off', on: 'On', low: 'Low', medium: 'Medium', high: 'High', max: 'Max' };
 const REASONING_DESCRIPTIONS: Record<ReasoningOption, string> = {
   off: 'Answer without a reasoning pass.',
   on: 'Reason before answering.',
   low: 'Light reasoning for quick answers.',
   medium: 'Balanced reasoning depth.',
-  high: 'Deepest reasoning for difficult tasks.'
+  high: 'Deep reasoning for difficult tasks.',
+  max: 'Deepest reasoning; slowest and uses the most tokens.'
 };
+
+/**
+ * Returns the reasoning to send back with an assistant message as `reasoning_content`. `thinking` is the reasoning
+ * VS Code kept in the history, when it did.
+ */
+export type ReasoningReplayHook = (message: AssistantReplayKey & { thinking?: string }) => string | undefined;
 
 export interface ChatCompletionRequest {
   serverName: string;
@@ -48,6 +56,8 @@ export interface ChatCompletionRequest {
   timeoutMs: number;
   token: vscode.CancellationToken;
   progress: vscode.Progress<vscode.LanguageModelResponsePart>;
+  /** Keeps the streamed reasoning, answer text, and tool call IDs, for servers that need the reasoning back. */
+  captureReplay?: boolean;
 }
 
 export interface ChatCompletionResult {
@@ -56,6 +66,7 @@ export interface ChatCompletionResult {
   reasoningCharacters: number;
   toolCallCount: number;
   usage?: ChatCompletionUsage;
+  replay?: AssistantReplayKey & { reasoning: string };
 }
 
 /** Ledger token fields for a completed request; OpenAI-style prompt_tokens already include cached tokens. */
@@ -81,7 +92,7 @@ export function buildChatCompletionBody(
   model: string,
   messages: readonly vscode.LanguageModelChatRequestMessage[],
   options: vscode.ProvideLanguageModelChatResponseOptions,
-  settings: { temperature: number; maxTokens: number; reasoningEffort?: string }
+  settings: { temperature: number; maxTokens: number; reasoningEffort?: string; replayReasoning?: ReasoningReplayHook }
 ): Record<string, unknown> {
   const tools = (options.tools ?? []).map((tool) => ({
     type: 'function',
@@ -93,7 +104,7 @@ export function buildChatCompletionBody(
   }));
   return {
     model,
-    messages: convertMessages(messages),
+    messages: convertMessages(messages, settings.replayReasoning),
     temperature: settings.temperature,
     max_tokens: settings.maxTokens,
     stream: true,
@@ -113,6 +124,7 @@ export async function streamChatCompletion(request: ChatCompletionRequest): Prom
   timeout.unref();
   const startedAt = Date.now();
   const result: ChatCompletionResult = { durationMs: 0, textCharacters: 0, reasoningCharacters: 0, toolCallCount: 0 };
+  const replay = request.captureReplay ? { text: [] as string[], reasoning: [] as string[], toolCallIds: [] as string[] } : undefined;
 
   try {
     const response = await fetch(request.url, {
@@ -129,17 +141,21 @@ export async function streamChatCompletion(request: ChatCompletionRequest): Prom
     const parser = new ChatCompletionStreamParser({
       onText: (text) => {
         result.textCharacters += text.length;
+        replay?.text.push(text);
         request.progress.report(new vscode.LanguageModelTextPart(text));
       },
       onReasoning: (reasoning) => {
         result.reasoningCharacters += reasoning.length;
+        replay?.reasoning.push(reasoning);
         if (ThinkingPart) {
           request.progress.report(new ThinkingPart(reasoning));
         }
       },
       onToolCall: (call) => {
         result.toolCallCount += 1;
-        request.progress.report(new vscode.LanguageModelToolCallPart(call.id || randomUUID(), call.name, call.arguments));
+        const callId = call.id || randomUUID();
+        replay?.toolCallIds.push(callId);
+        request.progress.report(new vscode.LanguageModelToolCallPart(callId, call.name, call.arguments));
       },
       onUsage: (update) => { result.usage = update; }
     });
@@ -151,6 +167,9 @@ export async function streamChatCompletion(request: ChatCompletionRequest): Prom
     parser.finish();
     if (result.usage) {
       request.progress.report(createUsagePart(result.usage));
+    }
+    if (replay) {
+      result.replay = { text: replay.text.join(''), reasoning: replay.reasoning.join(''), toolCallIds: replay.toolCallIds };
     }
     result.durationMs = Date.now() - startedAt;
     return result;
@@ -171,14 +190,22 @@ export async function streamChatCompletion(request: ChatCompletionRequest): Prom
   }
 }
 
-export function convertMessages(messages: readonly vscode.LanguageModelChatRequestMessage[]): Record<string, unknown>[] {
+export function convertMessages(
+  messages: readonly vscode.LanguageModelChatRequestMessage[],
+  replayReasoning?: ReasoningReplayHook
+): Record<string, unknown>[] {
+  const ThinkingPart = (vscode as VSCodeWithThinkingPart).LanguageModelThinkingPart;
   const result: Record<string, unknown>[] = [];
   for (const message of messages) {
     const textContent: Array<Record<string, unknown>> = [];
     const toolCalls: Record<string, unknown>[] = [];
     const toolResults: Array<{ callId: string; content: string }> = [];
+    const thinking: string[] = [];
     for (const part of message.content) {
-      if (part instanceof vscode.LanguageModelTextPart) {
+      if (ThinkingPart && part instanceof ThinkingPart) {
+        const value = (part as { value?: unknown }).value;
+        thinking.push(Array.isArray(value) ? value.join('') : typeof value === 'string' ? value : '');
+      } else if (part instanceof vscode.LanguageModelTextPart) {
         textContent.push({ type: 'text', text: part.value });
       } else if (part instanceof vscode.LanguageModelDataPart && part.mimeType.startsWith('image/')) {
         textContent.push({
@@ -204,13 +231,21 @@ export function convertMessages(messages: readonly vscode.LanguageModelChatReque
     for (const toolResult of toolResults) {
       result.push({ role: 'tool', tool_call_id: toolResult.callId, content: toolResult.content });
     }
+    const reasoning = replayReasoning && role === 'assistant' && (textContent.length > 0 || toolCalls.length > 0)
+      ? replayReasoning({
+        toolCallIds: toolCalls.map((call) => call.id as string),
+        text: textContent.map((entry) => entry.type === 'text' ? entry.text as string : '').join(''),
+        thinking: thinking.join('') || undefined
+      })
+      : undefined;
     if (textContent.length > 0 || toolCalls.length > 0) {
       result.push({
         role,
         content: textContent.length === 0
           ? null
           : textContent.length === 1 && textContent[0].type === 'text' ? textContent[0].text : textContent,
-        ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {})
+        ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+        ...(reasoning ? { reasoning_content: reasoning } : {})
       });
     }
   }

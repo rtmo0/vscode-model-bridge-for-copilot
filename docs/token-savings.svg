@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 440" width="920" height="440" role="img" aria-labelledby="title desc">
+  <title id="title">How Model Bridge saves tokens</title>
+  <desc id="desc">Every agent tool step resends the whole conversation. When the prompt prefix changes between steps, each step pays full price for all of it again. Model Bridge keeps the prefix byte-stable, so earlier steps are read from the prompt cache and only the new step is fresh input. It also sends only new items where the backend keeps state, uses cheap DeepSeek cache hits, redirects turns stuck on the same failure, and shows cache hits in the usage report.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f6f8fa; }
+      .card { fill: #ffffff; stroke: #d0d7de; }
+      .full { fill: #ffc9b8; }
+      .cached { fill: #bfe8d0; }
+      .fresh { fill: #f6a96f; }
+      .gap { stroke: #ffffff; stroke-width: 2; }
+      .title { fill: #1f2328; font: 600 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+      .text { fill: #1f2328; font: 500 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+      .note { fill: #59636e; font: 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+      .label { fill: #59636e; font: 600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; letter-spacing: .06em; }
+      .good { fill: #1a7f37; font: 600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+      .bad { fill: #bc4c00; font: 600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+      @media (prefers-color-scheme: dark) {
+        .bg { fill: #0d1117; }
+        .card { fill: #161b22; stroke: #3d444d; }
+        .full { fill: #7a3b26; }
+        .cached { fill: #1f5a3c; }
+        .fresh { fill: #c9773f; }
+        .gap { stroke: #161b22; }
+        .title, .text { fill: #e6edf3; }
+        .note, .label { fill: #9198a1; }
+        .good { fill: #3fb950; }
+        .bad { fill: #f0883e; }
+      }
+    </style>
+  </defs>
+
+  <rect class="bg" width="920" height="440" rx="16"/>
+
+  <text class="label" x="24" y="40">ONE AGENT TURN · EVERY TOOL STEP RESENDS THE CONVERSATION</text>
+
+  <!-- Prefix that changes between steps -->
+  <rect class="card" x="24" y="56" width="428" height="176" rx="12"/>
+  <text class="title" x="40" y="82">When the prefix changes</text>
+  <text class="note" x="40" y="101">each step pays full price for the whole history again</text>
+  <text class="note" x="40" y="132">step 1</text>
+  <rect class="full" x="92" y="120" width="110" height="16" rx="4"/>
+  <text class="note" x="40" y="158">step 2</text>
+  <rect class="full" x="92" y="146" width="170" height="16" rx="4"/>
+  <text class="note" x="40" y="184">step 3</text>
+  <rect class="full" x="92" y="172" width="230" height="16" rx="4"/>
+  <text class="note" x="40" y="210">step 4</text>
+  <rect class="full" x="92" y="198" width="290" height="16" rx="4"/>
+  <text class="bad" x="436" y="82" text-anchor="end">all full price</text>
+
+  <!-- Byte-stable prefix -->
+  <rect class="card" x="468" y="56" width="428" height="176" rx="12"/>
+  <text class="title" x="484" y="82">With Model Bridge</text>
+  <text class="note" x="484" y="101">earlier steps are read from the prompt cache</text>
+  <text class="note" x="484" y="132">step 1</text>
+  <rect class="full" x="536" y="120" width="110" height="16" rx="4"/>
+  <text class="note" x="484" y="158">step 2</text>
+  <rect class="cached" x="536" y="146" width="110" height="16" rx="4"/>
+  <rect class="fresh" x="646" y="146" width="60" height="16" rx="4"/>
+  <path class="gap" d="M646 146V162"/>
+  <text class="note" x="484" y="184">step 3</text>
+  <rect class="cached" x="536" y="172" width="170" height="16" rx="4"/>
+  <rect class="fresh" x="706" y="172" width="60" height="16" rx="4"/>
+  <path class="gap" d="M706 172V188"/>
+  <text class="note" x="484" y="210">step 4</text>
+  <rect class="cached" x="536" y="198" width="230" height="16" rx="4"/>
+  <rect class="fresh" x="766" y="198" width="60" height="16" rx="4"/>
+  <path class="gap" d="M766 198V214"/>
+  <text class="good" x="880" y="82" text-anchor="end">mostly cache</text>
+
+  <!-- Legend -->
+  <rect class="full" x="24" y="250" width="14" height="14" rx="3"/>
+  <text class="note" x="46" y="261">full-price input</text>
+  <rect class="cached" x="160" y="250" width="14" height="14" rx="3"/>
+  <text class="note" x="182" y="261">cache read: a fraction of the price</text>
+  <rect class="fresh" x="396" y="250" width="14" height="14" rx="3"/>
+  <text class="note" x="418" y="261">new this step: tool results, the model's last reply</text>
+
+  <!-- How -->
+  <text class="label" x="24" y="300">HOW</text>
+  <rect class="card" x="24" y="312" width="166" height="92" rx="12"/>
+  <text class="text" x="38" y="334">Stable prefix</text>
+  <text class="note" x="38" y="354">system prompt and</text>
+  <text class="note" x="38" y="370">tools stay byte-equal;</text>
+  <text class="note" x="38" y="386">new tools are appended</text>
+  <rect class="card" x="200" y="312" width="166" height="92" rx="12"/>
+  <text class="text" x="214" y="334">Only new steps</text>
+  <text class="note" x="214" y="354">Codex WebSocket and</text>
+  <text class="note" x="214" y="370">Claude session resume</text>
+  <text class="note" x="214" y="386">send just what is new</text>
+  <rect class="card" x="376" y="312" width="166" height="92" rx="12"/>
+  <text class="text" x="390" y="334">Cheap cache hits</text>
+  <text class="note" x="390" y="354">DeepSeek bills a hit</text>
+  <text class="note" x="390" y="370">at 2–3% of the full</text>
+  <text class="note" x="390" y="386">input price</text>
+  <rect class="card" x="552" y="312" width="166" height="92" rx="12"/>
+  <text class="text" x="566" y="334">Loop guard</text>
+  <text class="note" x="566" y="354">redirects a turn stuck</text>
+  <text class="note" x="566" y="370">on the same failure</text>
+  <text class="note" x="566" y="386">before it burns more</text>
+  <rect class="card" x="728" y="312" width="168" height="92" rx="12"/>
+  <text class="text" x="742" y="334">Usage report</text>
+  <text class="note" x="742" y="354">cache hit rate, cost,</text>
+  <text class="note" x="742" y="370">and the steps that</text>
+  <text class="note" x="742" y="386">missed the cache</text>
+
+  <text class="note" x="24" y="426">Bars are illustrative. Claude and ChatGPT subscriptions are limited by tokens, and Copilot resends the conversation with every tool call.</text>
+</svg>

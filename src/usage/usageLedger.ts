@@ -1,7 +1,7 @@
 import { appendFile, mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
-export type UsageProvider = 'claude' | 'codex' | 'lmstudio' | 'openaiCompatible';
+export type UsageProvider = 'claude' | 'codex' | 'deepseek' | 'lmstudio' | 'openaiCompatible';
 
 /**
  * One completed model request. Counts and identifiers only: never prompts, responses,
@@ -31,7 +31,7 @@ export interface UsageRecord {
   /** All output tokens, including reasoning. */
   outputTokens: number;
   reasoningTokens: number;
-  /** API-equivalent estimate; subscriptions are not billed per token. */
+  /** API-equivalent estimate; subscriptions are not billed per token. DeepSeek uses its list price. */
   costUsd?: number;
   effort?: string;
   transport?: string;

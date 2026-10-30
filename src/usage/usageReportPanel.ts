@@ -6,7 +6,7 @@ import { buildConversationDetail, buildUsageReport, filterRecords, rangeStart, t
 import { USAGE_SECTION } from './usageRecorder';
 
 const RANGES: readonly UsageRange[] = [1, 7, 30, 90, 'all'];
-const PROVIDERS: readonly UsageProvider[] = ['claude', 'codex', 'lmstudio', 'openaiCompatible'];
+const PROVIDERS: readonly UsageProvider[] = ['claude', 'codex', 'deepseek', 'lmstudio', 'openaiCompatible'];
 const LIVE_REFRESH_DELAY_MS = 1_500;
 
 /** Single usage-report webview; it refreshes itself while visible when new requests are recorded. */

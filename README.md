@@ -3,14 +3,16 @@
 
   <h1>Model Bridge for Copilot</h1>
 
-  <p><strong>Claude subscriptions, ChatGPT Codex, LM Studio, Ollama, llama.cpp, vLLM, and other OpenAI-compatible models in native VS Code Chat.</strong></p>
+  <p><strong>Claude subscriptions, ChatGPT Codex, DeepSeek, LM Studio, Ollama, llama.cpp, vLLM, and other OpenAI-compatible models in native VS Code Chat.</strong></p>
 
   <a href="https://boosty.to/rtm00"><img src="https://img.shields.io/badge/Boosty-support-F15F2C?logo=boosty&amp;logoColor=white" alt="Support on Boosty"></a>
 </div>
 
-Model Bridge for Copilot is a multi-provider VS Code Language Model Provider. It keeps the native Chat and Agent experience while letting you choose between a signed-in Claude Code account, ChatGPT Codex, models running locally in LM Studio, and any OpenAI-compatible server such as Ollama, llama.cpp, or vLLM.
+Model Bridge for Copilot is a multi-provider VS Code Language Model Provider. It keeps the native Chat and Agent experience while letting you choose between a signed-in Claude Code account, ChatGPT Codex, models running locally in LM Studio, the DeepSeek API, and any OpenAI-compatible server such as Ollama, llama.cpp, or vLLM.
 
-> This is an independent community extension. It is not affiliated with or endorsed by Anthropic, OpenAI, Microsoft, or LM Studio.
+> This is an independent community extension. It is not affiliated with or endorsed by Anthropic, OpenAI, DeepSeek, Microsoft, or LM Studio.
+
+![How Model Bridge works: VS Code Chat sends the prompt, conversation and tools to Model Bridge, which speaks each provider's protocol, keeps the prompt cache warm, watches for stuck turns and counts tokens; Claude, Codex, DeepSeek, LM Studio or an OpenAI-compatible server stream the answer, thinking and tool calls back to VS Code](docs/how-it-works.png)
 
 ## Providers
 
@@ -18,6 +20,7 @@ Model Bridge for Copilot is a multi-provider VS Code Language Model Provider. It
 |---|---|---|
 | **Claude** | Official Claude Code browser sign-in; no API key handled by the extension | Every model Claude Code offers the account — aliases such as Opus and Sonnet plus specific versions — through safe-mode `stream-json` |
 | **Codex** | ChatGPT browser sign-in with multi-account support, stored in VS Code SecretStorage | Automatic Codex model discovery with HTTP/WebSocket Responses parity |
+| **DeepSeek** | DeepSeek API key in VS Code SecretStorage, bound to the API URL | DeepSeek Flash and V4 Pro with 1M context, thinking effort, tool calls, context caching, and balance in the status bar |
 | **LM Studio** | No authentication by default; optional local server token in VS Code SecretStorage | Native model metadata plus OpenAI-compatible streaming chat and function tools |
 | **OpenAI-Compatible** | Optional API token per endpoint in VS Code SecretStorage, bound to the endpoint URL | Ollama, llama.cpp server, vLLM, or any `/v1/chat/completions` server, with per-server metadata discovery |
 
@@ -29,13 +32,15 @@ Each provider has its own model-picker group and management command. Run **Model
 - Streaming text, thinking/reasoning, tool calls, and token usage.
 - VS Code remains responsible for tool execution, confirmation, and workspace trust.
 - Provider-specific model controls for reasoning effort, context size, temperature, and service tier.
-- Matching Claude and Codex account-limit status bars (`Claude: 5h 74% · Weekly 65%`, `Codex: 5h 64% · Weekly 82%`) that refresh on startup, every 5 minutes, and after each request, with the latest request's token usage in the tooltip.
+- Matching Claude and Codex account-limit status bars (`Claude: 5h 74% · Weekly 65%`, `Codex: 5h 64% · Weekly 82%`) and a DeepSeek balance (`DeepSeek: $12.50`) that refresh on startup, every 5 minutes, and after requests, with the latest request's token usage in the tooltip.
 - The same Manage menu layout (Account, Usage, Models/Tools, Diagnostics) and Doctor report for every provider.
-- Prompt-cache-friendly requests that conserve Claude and ChatGPT subscription limits during long agent sessions.
+- Prompt-cache-friendly requests that conserve Claude and ChatGPT subscription limits and DeepSeek spend during long agent sessions ([how](#saving-account-usage)).
 - Codex multi-account OAuth, automatic refresh, WebSocket reuse, continuation, hosted Web Search, and optional Native Tool Search.
 - LM Studio native model metadata including loaded context, vision, tool-use training, reasoning options, architecture, size, and quantization.
 - Several OpenAI-compatible endpoints at once: Ollama tools, vision, thinking, and context from `/api/show`; llama.cpp served context from `/props`; vLLM `max_model_len`.
 - Thinking Effort in the model picker for local reasoning models, and `<think>…</think>` blocks shown as thinking instead of answer text.
+- DeepSeek models with 1M context, thinking effort up to Max, Agent-mode tool calls, cache-hit usage, and list-price cost in the usage report.
+- An optional loop guard for Agent mode on every provider that redirects a turn stuck on the same failure ([details](#loop-guard)).
 - Safe diagnostics for every provider without logging prompts, responses, credentials, or tool contents.
 
 ## Quick start
@@ -58,6 +63,20 @@ Claude account limits come from Claude Code's local `/usage` command, which make
 4. Choose a model from the **Codex** group.
 
 Codex authentication is browser sign-in only in Model Bridge. API-key, device-code, and `auth.json` import commands are intentionally not exposed. The complete Codex transport is included: model discovery, Responses streaming, HTTP/WebSocket fallback, reasoning, VS Code tools, account usage, browser-signed-in multi-account selection, refresh-token rotation, and compatible response continuation.
+
+### DeepSeek
+
+1. Create an API key on the [DeepSeek Platform](https://platform.deepseek.com/api_keys).
+2. Run **Model Bridge: DeepSeek: Set API Key** and paste it. The key is stored in VS Code SecretStorage.
+3. Choose **DeepSeek Flash** or **DeepSeek V4 Pro** from the **DeepSeek** group.
+
+Both models get a 1M-token context, tool calls in Agent mode, and a **Thinking Effort** picker: Off, Low, High (DeepSeek's default), and Max. DeepSeek Flash also accepts images. Requests may produce up to `modelBridge.deepseek.maxOutputTokens` (64K, DeepSeek's thinking-mode default), thinking included. Other models that DeepSeek lists appear as text-only.
+
+The status bar shows the account balance (`DeepSeek: $12.50`, with a warning when it is too low for API calls); click it for details or to top up. The usage report records cache hits and an estimated cost at DeepSeek's list price, including peak-hour rates.
+
+In thinking mode with tools, DeepSeek requires the reasoning of earlier steps to be sent back. Model Bridge keeps it in memory for the session and sends it with each request. When it is not available, for example for a conversation started before VS Code was reloaded, that request runs without thinking instead of failing; **Output → Model Bridge: DeepSeek** logs when this happens. A required tool call also runs without thinking, because DeepSeek does not support it there.
+
+`modelBridge.deepseek.baseURL` is machine-scoped and the key is bound to it, so a changed URL never receives the key.
 
 ### LM Studio
 
@@ -111,6 +130,10 @@ Useful commands:
 - `Model Bridge: Codex: Run Doctor`
 - `Model Bridge: Codex: Test Connection`
 - `Model Bridge: Codex: Show Account Limits`
+- `Model Bridge: DeepSeek: Set API Key`
+- `Model Bridge: DeepSeek: Show Balance`
+- `Model Bridge: DeepSeek: Run Doctor`
+- `Model Bridge: DeepSeek: Test Connection`
 - `Model Bridge: LM Studio: Run Doctor`
 - `Model Bridge: LM Studio: Test Connection`
 - `Model Bridge: LM Studio: Refresh Models`
@@ -122,8 +145,10 @@ Provider settings live under **Settings → Extensions → Model Bridge** and us
 
 - `modelBridge.claude.*`
 - `modelBridge.codex.*`
+- `modelBridge.deepseek.*`
 - `modelBridge.lmstudio.*`
 - `modelBridge.openaiCompatible.*`
+- `modelBridge.loopGuard.*`
 - `modelBridge.usage.*`
 
 ### Upgrading from Anthropic for Copilot or Codex For Copilot
@@ -132,12 +157,18 @@ Settings under `anthropicForCopilot.*` and `codexModelProvider.*` are copied to 
 
 ### Saving account usage
 
-Claude and ChatGPT subscriptions are limited by tokens, and agent sessions resend the conversation with every tool call. Model Bridge keeps those requests cheap by default:
+Claude and ChatGPT subscriptions are limited by tokens, DeepSeek bills them, and agent sessions resend the conversation with every tool call. Model Bridge keeps the start of each request byte-for-byte the same, so the backend reads it from the prompt cache, and sends only what is new where the backend keeps state:
+
+![How Model Bridge saves tokens: when the prompt prefix changes, every agent step pays full price for the whole history; with Model Bridge earlier steps are read from the prompt cache and only the new step is fresh input](docs/token-savings.png)
+
+What each provider does by default:
 
 - **Claude:** history is sent as one content block per chat message, the system prompt and tool catalog stay byte-stable between requests (no cwd, environment, or git status sections; tools sorted, schema annotations removed), so each tool step reads the earlier conversation from the prompt cache instead of rewriting it. When VS Code adds or removes tools mid-conversation (for example when a Virtual Tool group activates), the change is appended as a catalog update instead of rewriting the catalog in front of the cached history.
 - **Claude:** thinking effort defaults to **Claude Code Default**, which uses the `effortLevel` configured in Claude Code, as the official extension does.
 - **Claude:** the default context size is 200K with a 32K output reservation, so Copilot summarizes long conversations instead of resending up to 1M tokens. Choose a larger **Context Size** in the model picker only when you need it.
 - **Codex:** WebSocket continuation sends only new items with `previous_response_id`, and `prompt_cache_key` stays the same for the whole conversation, including after forks, edited messages, and window reloads. When the history must be replayed in full (HTTP transport or a dropped WebSocket), the replay keeps the encrypted reasoning of the current tool loop. Keep `modelBridge.codex.transport` on `auto`; `http` replays the full history for tool results.
+- **DeepSeek:** the conversation is sent unchanged from step to step, including the earlier reasoning DeepSeek requires, so its context cache matches; a cache hit costs 2–3% of the full input price.
+- **All providers:** the optional [loop guard](#loop-guard) redirects an agent turn that keeps hitting the same failure, before it spends more steps; its note is inserted at a fixed place, so it does not break the cache.
 
 Further savings you can choose:
 
@@ -166,15 +197,25 @@ Each completed request is recorded as counts only (tokens, model, step, duration
 
 **Model Bridge: Codex: Enable Native Tool Search** sets the global `github.copilot.chat.virtualTools.threshold` setting to `0`. That setting is shared by every chat model, so Claude, LM Studio, and Copilot models then receive the full tool list. Run **Model Bridge: Codex: Use VS Code Virtual Tool Groups** to restore the previous value, including before uninstalling the extension.
 
+### Loop guard
+
+Set `modelBridge.loopGuard.enabled` to `true` to watch Agent mode turns on every provider for failure loops. A turn counts as stuck after at least 20 tool calls with repeated edits to the same file (or edits across three or more files), at least 6 failing outputs, and at least 20% of failures repeating an earlier one exactly. Changing failures count as progress, and reading files full of errors or asserts is not a failure.
+
+When a turn is stuck, the model gets one short note, built only from its own actions, to step back and try a different hypothesis; it is never told to stop. If the turn is still stuck after another 20 tool calls, the response starts with a notice, and you decide whether to stop it. `modelBridge.loopGuard.sensitivity` chooses `conservative`, `default`, or `aggressive` thresholds.
+
+The guard keeps no data: each request recomputes it from the conversation, so the note stays at the same place in the history and prompt caches and Claude and Codex continuation keep working. The logs record only counts. The heuristic is adapted from [TokenEconomizer](https://github.com/microsoft/TokenEconomizer).
+
 ## Privacy and security
 
 - Claude credentials remain owned by the official Claude Code CLI.
-- ChatGPT OAuth, optional LM Studio tokens, and OpenAI-compatible endpoint tokens use VS Code SecretStorage; endpoint tokens are bound to the endpoint URL.
+- ChatGPT OAuth, the DeepSeek API key, optional LM Studio tokens, and OpenAI-compatible endpoint tokens use VS Code SecretStorage; the DeepSeek key and endpoint tokens are bound to their URL.
 - Local LM Studio prompts stay local unless the loaded model or LM Studio configuration routes them elsewhere.
 - Provider logs contain only bounded diagnostics, counts, timings, model IDs, and sanitized errors.
 - The usage history stores token counts, model names, and a salted conversation hash on this machine only.
 - Claude Code built-in tools are disabled for hidden provider requests; selected tools execute through VS Code.
 - Temporary Claude prompt files use restricted permissions and are always removed.
+- DeepSeek reasoning is kept in memory only, so it can be sent back to DeepSeek as its API requires; it is never written to disk or logged.
+- The loop guard reads tool results in memory only and stores nothing.
 
 ## Remote workspaces
 
@@ -202,4 +243,4 @@ Model Bridge for Copilot is free and open source. If it saves you time or subscr
 
 ## License and attribution
 
-MIT. The Codex integration is derived from the MIT-licensed [Codex For Copilot](https://github.com/GaussianGuaicai/Codex-For-Copilot) project by Gaussian; the original copyright notice is retained in [LICENSE](LICENSE).
+MIT. The Codex integration is derived from the MIT-licensed [Codex For Copilot](https://github.com/GaussianGuaicai/Codex-For-Copilot) project by Gaussian; the original copyright notice is retained in [LICENSE](LICENSE). The loop guard is adapted from the Apache-2.0-licensed [TokenEconomizer](https://github.com/microsoft/TokenEconomizer); see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

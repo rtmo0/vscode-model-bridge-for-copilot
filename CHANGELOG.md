@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### DeepSeek (new provider)
+
+- New **DeepSeek** model-picker group. Run **Model Bridge: DeepSeek: Set API Key**; the key is stored in VS Code SecretStorage for `modelBridge.deepseek.baseURL` only. DeepSeek Flash and DeepSeek V4 Pro get a 1M-token context, Agent-mode tool calls, image input for Flash, and a **Thinking Effort** picker (Off, Low, High, Max).
+- Earlier reasoning is sent back as DeepSeek requires in thinking mode with tools. It is kept in memory only; when it is unavailable, for example after a reload, the request runs without thinking instead of failing.
+- The account balance appears in the status bar (`DeepSeek: $12.50`) and refreshes on startup, every 5 minutes, and after requests. The usage report shows DeepSeek cache hits and an estimated cost at the list price, including peak hours.
+- Manage menu, Doctor, and Test Connection like the other providers.
+
+### Loop guard (all providers)
+
+- New opt-in `modelBridge.loopGuard.enabled`: when an Agent mode turn keeps hitting the same failure, the model gets one short redirect built from its own actions, and if the turn is still stuck the response says so. It never stops a turn, stores nothing, and keeps prompt caches and continuation intact. `modelBridge.loopGuard.sensitivity` picks the thresholds. Adapted from [TokenEconomizer](https://github.com/microsoft/TokenEconomizer) (Apache-2.0).
+
+### All providers
+
+- Fixed dependency advisories in the packaging tools (`@azure/msal-node`, `qs`) and updated `openai` to 7.45.1, `https-proxy-agent` to 9.1.0, TypeScript to 7.0, and esbuild to 0.28.
+
+### Documentation
+
+- The README shows how Model Bridge works and how it saves tokens.
+
 ## 1.4.1
 
 ### Claude

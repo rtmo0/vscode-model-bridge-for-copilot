@@ -78,6 +78,7 @@ process.stdin.on('end', () => process.exit(0));
     export class LanguageModelThinkingPart {}
     export class LanguageModelDataPart { static json(value, mimeType) { return { value, mimeType }; } }
     export const LanguageModelChatMessageRole = { User: 1, Assistant: 2 };
+    export const LanguageModelChatMessage = { User(text) { return { role: 1, name: undefined, content: [{ value: text }] }; } };
     export const LanguageModelChatToolMode = { Auto: 1, Required: 2 };
     export const workspace = {
       workspaceFolders: undefined,

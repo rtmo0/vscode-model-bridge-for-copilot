@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { performance } from 'node:perf_hooks';
 import type { ResponseUsage } from 'openai/resources/responses/responses';
+import { applyLoopGuard, reportLoopGuard } from '../../loopGuard';
 import {
   createStatefulMarkerPayload,
   convertMessagesToResponsesInput,
@@ -315,7 +316,9 @@ export class CodexModelProvider implements vscode.LanguageModelChatProvider {
       throw new Error('Codex is not signed in. Run "Model Bridge: Codex: Sign in with Browser".');
     }
 
-    const convertedMessages = convertMessagesToResponsesInputWithStatefulMarker(messages);
+    const guarded = applyLoopGuard(messages);
+    reportLoopGuard(guarded, requestLogger, progress);
+    const convertedMessages = convertMessagesToResponsesInputWithStatefulMarker(guarded.messages);
     if (convertedMessages.statefulMarker.kind === 'invalid'
       && convertedMessages.statefulMarker.isLeadingStandalone) {
       throw new Error(STATEFUL_MARKER_LOCAL_ERROR);

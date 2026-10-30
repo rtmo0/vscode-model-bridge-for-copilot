@@ -21,6 +21,7 @@ assert.deepEqual([...registeredProviders].sort(), [...contributedProviders].sort
 assert.deepEqual([...contributedProviders].sort(), [
   'model-bridge-claude',
   'model-bridge-codex',
+  'model-bridge-deepseek',
   'model-bridge-lmstudio',
   'model-bridge-openai-compatible'
 ]);
@@ -34,10 +35,13 @@ assert(source.includes("getConfiguration('modelBridge.claude')"));
 assert(source.includes("getConfiguration('modelBridge.codex')"));
 assert(source.includes("getConfiguration('modelBridge.lmstudio')"));
 assert(source.includes("OPENAI_COMPATIBLE_SECTION = 'modelBridge.openaiCompatible'"));
+assert(source.includes("DEEPSEEK_SECTION = 'modelBridge.deepseek'"));
 const settingKeys = Object.keys(manifest.contributes.configuration.properties);
 assert(settingKeys.includes('modelBridge.openaiCompatible.endpoints'));
 assert.equal(manifest.contributes.configuration.properties['modelBridge.openaiCompatible.endpoints'].scope, 'machine',
   'workspace settings must not redirect requests that carry stored API tokens');
+assert.equal(manifest.contributes.configuration.properties['modelBridge.deepseek.baseURL'].scope, 'machine',
+  'workspace settings must not redirect requests that carry the DeepSeek API key');
 console.log('Model Bridge manifest smoke tests passed.');
 
 async function collectTypeScriptFiles(directory) {

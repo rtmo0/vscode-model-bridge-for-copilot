@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import * as vscode from 'vscode';
+import { applyLoopGuard, reportLoopGuard } from '../../loopGuard';
 import type { UsageRecorder } from '../../usage/usageRecorder';
 import {
   fetchClaudeModelOptions,
@@ -309,7 +310,8 @@ export class ClaudeModelProvider implements vscode.LanguageModelChatProvider, vs
     const contextSize = resolveContextSizeOption(runtimeOptions, config.defaultContextSize);
     const tools = normalizeTools(options.tools ?? []);
     const markerNonce = this.markerNonce;
-    const catalogPlan = this.toolCatalogStore.plan(messages.map(convertMessage), tools);
+    const guarded = applyLoopGuard(messages);
+    const catalogPlan = this.toolCatalogStore.plan(guarded.messages.map(convertMessage), tools);
     const promptMessages = catalogPlan.messages;
     const toolRequired = options.toolMode === vscode.LanguageModelChatToolMode.Required && tools.length > 0;
     const sessionEnvelope = {
@@ -328,6 +330,11 @@ export class ClaudeModelProvider implements vscode.LanguageModelChatProvider, vs
     const messagesToSend = continuation?.appendedMessages ?? promptMessages;
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     const outputSegments: Array<{ kind: 'text' | 'tool'; value: string }> = [];
+    reportLoopGuard(guarded, this.output, progress);
+    if (guarded.notice) {
+      // Recorded as output, so the continuation still matches the history that now starts with the notice.
+      outputSegments.push({ kind: 'text', value: guarded.notice });
+    }
     let activeSessionId = requestedSessionId;
     let textCharacters = 0;
     let thinkingCharacters = 0;

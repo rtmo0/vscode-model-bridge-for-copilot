@@ -84,6 +84,7 @@ try {
             export class LanguageModelDataPart { constructor(data,mimeType){Object.assign(this,{data,mimeType});} static json(value,mimeType){return {value,mimeType};} }
             globalThis.__lmStudioVscodeTest = { LanguageModelTextPart, LanguageModelDataPart, LanguageModelToolCallPart, LanguageModelToolResultPart, CancellationError };
             export const LanguageModelChatMessageRole={User:1,Assistant:2};
+            export const LanguageModelChatMessage = { User(text) { return { role: 1, name: undefined, content: [{ value: text }] }; } };
             export const LanguageModelChatToolMode={Auto:1,Required:2};
             export const commands={async executeCommand(){}};
             export const env={async openExternal(){}};
