@@ -14,6 +14,7 @@ export interface DeepSeekRequestSummary extends LatestRequestUsage {
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 // Agent turns send many requests; the balance is refreshed after at most one of them per interval.
 const REQUEST_REFRESH_INTERVAL_MS = 30 * 1000;
+const EXHAUSTED_TRUST_MS = 15 * 60 * 1000;
 const CURRENCY_SYMBOLS: Record<string, string> = { USD: '$', CNY: '¥' };
 
 export function parseDeepSeekBalance(payload: unknown): DeepSeekBalance | undefined {
@@ -72,6 +73,12 @@ export class DeepSeekBalanceStatusBar implements vscode.Disposable {
 
   getBalance(): DeepSeekBalance | undefined {
     return this.balance;
+  }
+
+  /** For combos: while the last balance check said the balance cannot pay for calls, until it is 15 minutes old. */
+  getExhaustedUntil(now = Date.now()): number | undefined {
+    const until = this.lastRefreshAt + EXHAUSTED_TRUST_MS;
+    return this.balance && !this.balance.available && until > now ? until : undefined;
   }
 
   clear(): void {

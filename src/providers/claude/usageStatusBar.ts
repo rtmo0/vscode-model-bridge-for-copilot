@@ -4,6 +4,7 @@ import {
   mergeRateLimitUpdate,
   parseClaudeUsageReport,
   toLatestRequestUsage,
+  getClaudeExhaustedUntil,
   type ClaudeAccountUsageSnapshot
 } from './accountUsage';
 import type { ClaudeUsageUpdate } from './protocol';
@@ -60,6 +61,11 @@ export class ClaudeAccountUsageStatusBar implements vscode.Disposable {
 
   getCompactText(): string | undefined {
     return this.snapshot ? buildClaudeAccountUsageDisplay(this.snapshot).compactText : undefined;
+  }
+
+  /** For combos: when the account is out of its session or weekly limit, the time it resets. */
+  getExhaustedUntil(now = Date.now()): number | undefined {
+    return this.snapshot ? getClaudeExhaustedUntil(this.snapshot, now) : undefined;
   }
 
   clear(): void {

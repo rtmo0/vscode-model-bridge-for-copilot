@@ -1,19 +1,21 @@
 # Model Bridge for Copilot — обзор проекта
 
-Состояние на версию **1.4.1** (октябрь 2026). Документ описывает назначение, архитектуру, провайдеры, инфраструктуру и предлагаемые доработки.
+Состояние на версию **1.5.0** (октябрь 2026). Документ описывает назначение, архитектуру, провайдеры, инфраструктуру и предлагаемые доработки.
 
 ---
 
 ## 1. Назначение
 
-Model Bridge for Copilot — расширение VS Code, которое регистрирует четыре независимых **Language Model Chat Provider** (`vscode.lm.registerLanguageModelChatProvider`). Благодаря этому в нативном Chat и Agent mode VS Code (Copilot Chat) появляются модели из четырёх источников:
+Model Bridge for Copilot — расширение VS Code, которое регистрирует пять независимых **Language Model Chat Provider** (`vscode.lm.registerLanguageModelChatProvider`) и группу **Combos** поверх них. Благодаря этому в нативном Chat и Agent mode VS Code (Copilot Chat) появляются модели из пяти источников, а также их комбинации:
 
 | Провайдер | Vendor ID | Источник моделей | Аутентификация |
 |---|---|---|---|
 | **Claude** | `model-bridge-claude` | Официальный Claude Code CLI (`stream-json`, `--safe-mode`) | Делегирована Claude Code, расширение не видит учётных данных |
 | **Codex** | `model-bridge-codex` | ChatGPT Codex Responses API (HTTP + WebSocket) | ChatGPT OAuth (PKCE, loopback), мультиаккаунт, SecretStorage |
+| **DeepSeek** | `model-bridge-deepseek` | DeepSeek API (`/chat/completions`, thinking, 1M контекст) | API-ключ в SecretStorage, привязан к `baseURL` |
 | **LM Studio** | `model-bridge-lmstudio` | Локальный LM Studio (`/api/v1/models` + `/v1/chat/completions`) | Не нужна; опциональный токен в SecretStorage |
 | **OpenAI-Compatible** | `model-bridge-openai-compatible` | Ollama, llama.cpp, vLLM и любые `/v1/chat/completions`-серверы; несколько эндпоинтов | Опциональный токен на эндпоинт в SecretStorage, привязан к URL |
+| **Combos** | `model-bridge-combos` | Модели остальных провайдеров: fallback и plan → execute | Своей нет: вызывает провайдеры внутри расширения |
 
 Исполнение инструментов, их подтверждение и workspace trust остаются за VS Code. Расширение только транслирует сообщения, вызовы инструментов, reasoning и данные об использовании токенов.
 
@@ -29,7 +31,8 @@ Model Bridge for Copilot — расширение VS Code, которое рег
 
 1. Создаёт общий лог-канал `Model Bridge` и регистрирует общие команды: `modelBridge.manage`, `modelBridge.doctor`, `modelBridge.support`.
 2. Выполняет одноразовую миграцию настроек `anthropicForCopilot.*` / `codexModelProvider.*` → `modelBridge.*` ([src/settingsMigration.ts](../src/settingsMigration.ts)).
-3. Активирует провайдеры по очереди (Claude → LM Studio → OpenAI-Compatible → Codex). Каждый обёрнут в `activateProvider`: если один провайдер падает, пользователь видит предупреждение, а остальные продолжают работать.
+3. Активирует провайдеры по очереди (Claude → LM Studio → OpenAI-Compatible → DeepSeek → Codex). Каждый обёрнут в `activateProvider`: если один провайдер падает, пользователь видит предупреждение, а остальные продолжают работать.
+4. Каждый `activate*` возвращает `ActivatedProvider` (провайдер и, у Claude, Codex и DeepSeek, проверку доступности по статус-бару). Из них собирается реестр ([src/providers/registry.ts](../src/providers/registry.ts)), и последними активируются Combos. Провайдера, который не активировался, в реестре просто нет.
 
 События активации: `onLanguageModelChatProvider:<vendor>` для каждого провайдера и `onStartupFinished`.
 
@@ -39,13 +42,19 @@ Model Bridge for Copilot — расширение VS Code, которое рег
 src/
 ├── extension.ts               активация, общие меню
 ├── settingsMigration.ts       миграция legacy-настроек
+├── loopGuard.ts               опциональный loop guard для всех провайдеров
+├── usage/                     журнал расхода и отчёт
 └── providers/
     ├── managementMenu.ts      общий макет Manage-меню и Doctor-отчёта (Copy Report / Open Logs)
     ├── usageSummary.ts        форматирование строки «последний запрос» для tooltip
+    ├── registry.ts            ID провайдеров, ActivatedProvider, проверка доступности
+    ├── providerError.ts       ProviderHttpError (статус и Retry-After)
     ├── claude/                ~2 400 строк
     ├── codex/                 ~17 000 строк (самая крупная часть)
+    ├── deepseek/              DeepSeek: таблица моделей и цен, баланс
     ├── lmstudio/              LM Studio: нативные метаданные и команды
-    └── openaiCompatible/      общее ядро /v1/chat/completions + провайдер эндпоинтов
+    ├── openaiCompatible/      общее ядро /v1/chat/completions + провайдер эндпоинтов
+    └── combos/                fallback и plan → execute поверх остальных провайдеров
 ```
 
 Объём: около **25 000 строк** TypeScript и тестов. Сборка — один бандл esbuild `out/extension.js` (CJS, node20, `vscode` external). Runtime-зависимостей нет: только devDependencies (`typescript`, `esbuild`, `@vscode/vsce`, типы).
@@ -55,7 +64,8 @@ src/
 - **Единое Manage-меню** для каждого провайдера с разделами Account / Usage / Models·Tools / Diagnostics.
 - **Doctor-отчёт**: ограниченный по размеру текст, безопасный для копирования (без промптов, ответов и секретов).
 - **Usage data part**: после ответа провайдер отправляет `LanguageModelDataPart.json(..., 'usage')` в общем формате VS Code.
-- **Статус-бары лимитов аккаунта** (Claude и Codex): `Claude: 5h 74% · Weekly 65%`. Обновляются при старте, каждые 5 минут и после каждого запроса; данные старше 15 минут помечаются как устаревшие.
+- **Статус-бары лимитов аккаунта** (Claude и Codex) и баланса (DeepSeek): `Claude: 5h 74% · Weekly 65%`, `DeepSeek: $12.50`. Обновляются при старте, каждые 5 минут и после запросов; данные старше 15 минут помечаются как устаревшие. Combos читают из них, исчерпан ли аккаунт.
+- **Loop guard** ([src/loopGuard.ts](../src/loopGuard.ts), опционально): если ход агента крутится на одной и той же ошибке, модель получает одну короткую подсказку. Состояния нет: всё пересчитывается из истории, поэтому префикс остаётся append-only.
 - **Скрытие недоступных моделей**: если бэкенд отклоняет модель для аккаунта, она исчезает из пикера на TTL (Claude — 24 часа, Codex — 7 дней или до смены версии протокола).
 
 ---
@@ -157,7 +167,28 @@ src/
 
 ---
 
-## 5b. Журнал расхода и отчёт
+## 5b. Провайдер DeepSeek
+
+Файлы: [src/providers/deepseek/](../src/providers/deepseek/) — `provider.ts`, `models.ts`, `balanceStatusBar.ts`, `integration.ts`. Использует общее ядро `chatCompletions.ts`.
+
+- **Модели** и цены берутся из опубликованной таблицы в `models.ts`; неизвестные модели — только текст и без стоимости.
+- **Thinking с инструментами**: DeepSeek требует вернуть прежний `reasoning_content`. Он хранится в памяти (`reasoningReplay.ts`, ограниченно, не логируется). Если reasoning недоступен или DeepSeek его отклоняет, запрос выполняется без thinking, а не падает.
+- **Баланс** в статус-баре, стоимость по прайсу с учётом пиковых часов — в отчёте расхода.
+
+---
+
+## 5c. Combos
+
+Файлы: [src/providers/combos/](../src/providers/combos/) — `provider.ts`, `routing.ts` (без импортов VS Code), `planExecute.ts`, `integration.ts`. Настройка `modelBridge.combos` (application scope).
+
+- **Вызов цели**: напрямую `provideLanguageModelChatResponse` провайдера из реестра с его собственным `LanguageModelChatInformation`, без `vscode.lm`. Usage записывает сам целевой провайдер; Combos логируют только решения о маршрутизации.
+- **Fallback**: цели по порядку; переход к следующей только при ошибке **до** первой части ответа (лимиты, квота, 5xx, сеть, таймаут, авторизация). Cooldown 60 с с удвоением до 15 мин или по `Retry-After`. Разговор закреплён за ответившей целью (LRU на 256 ключей, хеш первого сообщения в памяти). Исчерпанные по статус-бару и остывающие цели пробуются последними.
+- **Plan → execute**: на новый промпт планировщик без инструментов пишет план (стримится под заголовком **Plan**), затем в том же запросе исполнитель работает с инструментами. Шаги инструментов — только исполнителю. При redirect-событии loop guard (даже при выключенной настройке) — один пересмотренный план за ход. Без планировщика исполнитель работает один; если исполнитель упал до ответа, ход доделывает планировщик.
+- **Возможности** комбо — пересечение возможностей целей, окно — минимум.
+
+---
+
+## 5d. Журнал расхода и отчёт
 
 Файлы: [src/usage/](../src/usage/), [media/usageReport.js](../media/usageReport.js), [media/usageReport.css](../media/usageReport.css).
 
@@ -179,6 +210,8 @@ src/
 | Codex | Manage, Sign in with Browser, Add/Switch/Remove Account, Show Status, Sign Out, Show/Refresh Account Limits, Enable Native Tool Search, Restore VS Code Tool Grouping, Show Native Tool Search Status, Show Effective Protocol, Open Debug Logs/Settings, Doctor, Test Connection |
 | LM Studio | Manage, Doctor, Refresh Models, Set/Clear API Token, Open Settings/Documentation/Logs, Test Connection |
 | OpenAI-Compatible | Manage, Add/Remove Endpoint, Set/Clear API Token, Refresh Models, Test Connection, Doctor, Open Settings/Logs |
+| DeepSeek | Manage, Set/Clear API Key, Show Balance, Open Platform, Refresh Models, Test Connection, Doctor, Open Documentation/Logs/Settings |
+| Combos | Manage, Run Doctor, Refresh Models, Edit Combos, Open Logs |
 
 ---
 
@@ -194,6 +227,12 @@ src/
 
 **OpenAI-Compatible** (`modelBridge.openaiCompatible.*`): `endpoints` ([]), `contextSize` (32 768), `maxOutputTokens` (8 192), `temperature` (0.2), `requestTimeoutSeconds` (600).
 
+**DeepSeek** (`modelBridge.deepseek.*`): `baseURL` (machine scope), `maxOutputTokens` (65 536), `temperature` (0.2), `requestTimeoutSeconds` (600), `balanceStatusBar`.
+
+**Combos**: `modelBridge.combos` ([]): `{ name, strategy: "fallback", targets }` или `{ name, strategy: "planExecute", planner, executor }`, цели в виде `provider:model`.
+
+**Loop guard** (`modelBridge.loopGuard.*`): `enabled` (false), `sensitivity` (`default`).
+
 ---
 
 ## 8. Безопасность и приватность
@@ -204,7 +243,8 @@ src/
 - Учётные данные Claude не читаются и не копируются. Из окружения дочернего процесса удаляются переменные с API-ключами.
 - Встроенные инструменты Claude Code отключены (`--tools ""`), используется `--safe-mode`, а не `--bare`.
 - Временные файлы промпта создаются с правами `0o600` и удаляются при успехе, ошибке, таймауте и отмене.
-- Секреты Codex и LM Studio хранятся только в VS Code SecretStorage.
+- Секреты Codex, DeepSeek, LM Studio и OpenAI-Compatible хранятся только в VS Code SecretStorage.
+- Combos не сохраняют ключи разговоров и не логируют планы и промпты.
 - Изменение настроек, влияющих на другие провайдеры, требует явного подтверждения.
 
 ---
@@ -215,10 +255,10 @@ src/
 |---|---|
 | `npm run check` | `tsc --noEmit` (strict) |
 | `npm run compile` | check + esbuild-бандл |
-| `npm run test:smoke` | проверки манифеста + наборы `test:claude`, `test:codex`, `test:lmstudio`, `test:openai-compatible`, `test:usage` |
+| `npm run test:smoke` | проверки манифеста + наборы `test:loop-guard`, `test:claude`, `test:codex`, `test:lmstudio`, `test:openai-compatible`, `test:deepseek`, `test:combos`, `test:usage` |
 | `npm run package:vsix` | `vsce package --no-dependencies` |
 
-- **Тесты**: 20 smoke-скриптов на `node:assert` (около 750 проверок), запускаются цепочкой `&&` поверх собранного бандла. Больше всего покрыт Codex: транспорты, reuse, auth. Тестов, которые запускают расширение внутри VS Code, нет.
+- **Тесты**: 24 smoke-скрипта на `node:assert`, запускаются цепочкой `&&` поверх собранного бандла. Больше всего покрыт Codex: транспорты, reuse, auth. Тестов, которые запускают расширение внутри VS Code, нет.
 - **Состояние**: на момент написания `npm run check` и `npm run test:smoke` проходят полностью.
 - **CI** ([ci.yml](../.github/workflows/ci.yml)): ubuntu, Node 22, `npm ci` → `npm audit` → compile → smoke → VSIX-артефакт.
 - **Release** ([release.yml](../.github/workflows/release.yml)): по тегу `v*.*.*` проверяет совпадение тега с версией в `package.json`, собирает VSIX, извлекает раздел из CHANGELOG и создаёт GitHub Release. Публикация в Marketplace выполняется вручную ([releasing.md](releasing.md)).
@@ -278,7 +318,7 @@ Claude и LM Studio используют эвристику «символы / 4
 Встроенный раннер Node 22 не требует зависимостей и даёт изоляцию тестов, фильтрацию, понятный отчёт и `--experimental-test-coverage`. Сейчас скрипты связаны через `&&`: первый упавший скрывает результаты остальных, а список тестов в `package.json` поддерживается вручную.
 
 **🟡 Интеграционный тест активации.**
-Один тест на `@vscode/test-electron`: расширение активируется, три vendor-провайдера зарегистрированы, падение одного провайдера не ломает другие. Это закрепит главное кросс-провайдерное требование.
+Один тест на `@vscode/test-electron`: расширение активируется, шесть vendor-провайдеров зарегистрированы, падение одного провайдера не ломает другие. Это закрепит главное кросс-провайдерное требование.
 
 **🟡 CI-матрица Windows и macOS.**
 В Claude-провайдере есть ветки для `win32` (поиск `claude`, права временных файлов: на Windows `mode: 0o600` фактически игнорируется). Сейчас CI проверяет только ubuntu.

@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 390" width="920" height="390" role="img" aria-labelledby="title desc">
+  <title id="title">How combos route requests</title>
+  <desc id="desc">A fallback combo tries its models in order. When Claude Opus is rate limited before answering, it cools down for 60 seconds and Codex answers; the conversation then stays on Codex, and DeepSeek is used only if Codex fails too. A plan → execute combo uses two models in one response: the planner writes a short plan without tools for each new prompt, the executor carries it out and runs every tool step, and when the executor looks stuck the planner writes a revised plan once per turn.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f6f8fa; }
+      .card { fill: #ffffff; stroke: #d0d7de; }
+      .fail { fill: #fff1ec; stroke: #f3b6a5; }
+      .ok { fill: #effaf6; stroke: #9fd9c2; }
+      .idle { fill: #f6f8fa; stroke: #d0d7de; }
+      .step { fill: #fff4ec; stroke: #f6c8a8; }
+      .cloud { fill: #eef6ff; stroke: #9cc7f5; }
+      .title { fill: #1f2328; font: 600 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+      .text { fill: #1f2328; font: 500 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+      .note { fill: #59636e; font: 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+      .label { fill: #59636e; font: 600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; letter-spacing: .06em; }
+      .good { fill: #1a7f37; font: 600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+      .bad { fill: #bc4c00; font: 600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+      .arrow { stroke: #8c959f; stroke-width: 1.6; fill: none; }
+      .loop { stroke: #8c959f; stroke-width: 1.6; fill: none; stroke-dasharray: 4 4; }
+      .head { fill: #8c959f; }
+      @media (prefers-color-scheme: dark) {
+        .bg { fill: #0d1117; }
+        .card { fill: #161b22; stroke: #3d444d; }
+        .fail { fill: #2d1a14; stroke: #7a3b2c; }
+        .ok { fill: #0f2a22; stroke: #2c6e56; }
+        .idle { fill: #0d1117; stroke: #3d444d; }
+        .step { fill: #2d1d14; stroke: #7a4a2c; }
+        .cloud { fill: #0f2338; stroke: #2f5f91; }
+        .title, .text { fill: #e6edf3; }
+        .note, .label { fill: #9198a1; }
+        .good { fill: #3fb950; }
+        .bad { fill: #f0883e; }
+        .arrow, .loop { stroke: #6e7681; }
+        .head { fill: #6e7681; }
+      }
+    </style>
+    <marker id="tip" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="head" d="M0 0L10 5L0 10z"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="920" height="390" rx="16"/>
+
+  <text class="label" x="24" y="40">COMBOS · ONE PICKER ENTRY, SEVERAL PROVIDERS</text>
+
+  <!-- Fallback -->
+  <rect class="card" x="24" y="56" width="428" height="290" rx="12"/>
+  <text class="title" x="40" y="82">Fallback</text>
+  <text class="note" x="40" y="101">a conversation stays on the model that answered</text>
+
+  <rect class="fail" x="40" y="118" width="396" height="48" rx="10"/>
+  <text class="text" x="56" y="138">1 · claude:opus</text>
+  <text class="note" x="56" y="155">failed before answering · cools down 60 s</text>
+  <text class="bad" x="420" y="147" text-anchor="end">429 rate limit</text>
+
+  <path class="arrow" d="M70 166V180" marker-end="url(#tip)"/>
+
+  <rect class="ok" x="40" y="182" width="396" height="48" rx="10"/>
+  <text class="text" x="56" y="202">2 · codex:gpt-5.5</text>
+  <text class="note" x="56" y="219">answers · the conversation sticks here</text>
+  <text class="good" x="420" y="211" text-anchor="end">answers</text>
+
+  <rect class="idle" x="40" y="246" width="396" height="48" rx="10"/>
+  <text class="text" x="56" y="266">3 · deepseek:deepseek-v4-pro</text>
+  <text class="note" x="56" y="283">used only if the models above fail too</text>
+  <text class="note" x="420" y="275" text-anchor="end">standby</text>
+
+  <text class="note" x="40" y="318">Moves on only before the answer starts.</text>
+  <text class="note" x="40" y="334">Exhausted accounts are tried last, without a failed call.</text>
+
+  <!-- Plan → execute -->
+  <rect class="card" x="468" y="56" width="428" height="290" rx="12"/>
+  <text class="title" x="484" y="82">Plan → execute</text>
+  <text class="note" x="484" y="101">two models in one response</text>
+
+  <rect class="step" x="484" y="118" width="344" height="48" rx="10"/>
+  <text class="text" x="500" y="138">Planner · claude:opus</text>
+  <text class="note" x="500" y="155">each new prompt → a short plan, no tools</text>
+
+  <path class="arrow" d="M656 166V180" marker-end="url(#tip)"/>
+
+  <rect class="cloud" x="484" y="182" width="344" height="48" rx="10"/>
+  <text class="text" x="500" y="202">Executor · deepseek:deepseek-flash</text>
+  <text class="note" x="500" y="219">carries out the plan · every tool step</text>
+
+  <path class="arrow" d="M656 230V244" marker-end="url(#tip)"/>
+
+  <rect class="idle" x="484" y="246" width="344" height="48" rx="10"/>
+  <text class="text" x="500" y="266">Stuck? Revised plan</text>
+  <text class="note" x="500" y="283">the planner is asked again, once per turn</text>
+
+  <path class="loop" d="M828 270H862V142H836" marker-end="url(#tip)"/>
+
+  <text class="note" x="484" y="318">The plan stays in the conversation,</text>
+  <text class="note" x="484" y="334">so the executor's prompt cache keeps working.</text>
+
+  <text class="note" x="24" y="374">Targets are provider:model from the other groups. Each model records its own usage; switching models starts a new prompt cache.</text>
+</svg>

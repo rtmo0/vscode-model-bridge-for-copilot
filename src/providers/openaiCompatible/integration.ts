@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import type { UsageRecorder } from '../../usage/usageRecorder';
+import type { ActivatedProvider } from '../registry';
 import { showDoctorReport, showManagementMenu } from '../managementMenu';
 import { formatTokenCount, isInsecureRemoteURL } from './chatCompletions';
 import { ENDPOINT_PRESETS, ENDPOINT_TYPES, type EndpointConfig } from './discovery';
@@ -11,7 +12,7 @@ import {
 
 const INSECURE_TOKEN_WARNING = 'This endpoint uses plain HTTP on a non-local host, so the API token is sent unencrypted. Use HTTPS or an SSH tunnel.';
 
-export function activateOpenAICompatible(context: vscode.ExtensionContext, usageRecorder?: UsageRecorder): OpenAICompatibleModelProvider {
+export function activateOpenAICompatible(context: vscode.ExtensionContext, usageRecorder?: UsageRecorder): ActivatedProvider {
   const output = vscode.window.createOutputChannel('Model Bridge: OpenAI-Compatible', { log: true });
   const provider = new OpenAICompatibleModelProvider(context, output, usageRecorder);
   context.subscriptions.push(
@@ -64,7 +65,7 @@ export function activateOpenAICompatible(context: vscode.ExtensionContext, usage
       ] }
     ]))
   );
-  return provider;
+  return { provider };
 }
 
 async function addEndpoint(provider: OpenAICompatibleModelProvider): Promise<void> {

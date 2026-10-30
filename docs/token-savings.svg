@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 440" width="920" height="440" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 506" width="920" height="506" role="img" aria-labelledby="title desc">
   <title id="title">How Model Bridge saves tokens</title>
-  <desc id="desc">Every agent tool step resends the whole conversation. When the prompt prefix changes between steps, each step pays full price for all of it again. Model Bridge keeps the prefix byte-stable, so earlier steps are read from the prompt cache and only the new step is fresh input. It also sends only new items where the backend keeps state, uses cheap DeepSeek cache hits, redirects turns stuck on the same failure, and shows cache hits in the usage report.</desc>
+  <desc id="desc">Every agent tool step resends the whole conversation. When the prompt prefix changes between steps, each step pays full price for all of it again. Model Bridge keeps the prefix byte-stable, so earlier steps are read from the prompt cache and only the new step is fresh input. It also sends only new items where the backend keeps state, uses cheap DeepSeek cache hits, redirects turns stuck on the same failure, lets a plan → execute combo hand the tool steps to a cheaper model, and shows cache hits in the usage report.</desc>
   <defs>
     <style>
       .bg { fill: #f6f8fa; }
@@ -30,7 +30,7 @@
     </style>
   </defs>
 
-  <rect class="bg" width="920" height="440" rx="16"/>
+  <rect class="bg" width="920" height="506" rx="16"/>
 
   <text class="label" x="24" y="40">ONE AGENT TURN · EVERY TOOL STEP RESENDS THE CONVERSATION</text>
 
@@ -78,31 +78,30 @@
 
   <!-- How -->
   <text class="label" x="24" y="300">HOW</text>
-  <rect class="card" x="24" y="312" width="166" height="92" rx="12"/>
+  <rect class="card" x="24" y="312" width="284" height="72" rx="12"/>
   <text class="text" x="38" y="334">Stable prefix</text>
-  <text class="note" x="38" y="354">system prompt and</text>
-  <text class="note" x="38" y="370">tools stay byte-equal;</text>
-  <text class="note" x="38" y="386">new tools are appended</text>
-  <rect class="card" x="200" y="312" width="166" height="92" rx="12"/>
-  <text class="text" x="214" y="334">Only new steps</text>
-  <text class="note" x="214" y="354">Codex WebSocket and</text>
-  <text class="note" x="214" y="370">Claude session resume</text>
-  <text class="note" x="214" y="386">send just what is new</text>
-  <rect class="card" x="376" y="312" width="166" height="92" rx="12"/>
-  <text class="text" x="390" y="334">Cheap cache hits</text>
-  <text class="note" x="390" y="354">DeepSeek bills a hit</text>
-  <text class="note" x="390" y="370">at 2–3% of the full</text>
-  <text class="note" x="390" y="386">input price</text>
-  <rect class="card" x="552" y="312" width="166" height="92" rx="12"/>
-  <text class="text" x="566" y="334">Loop guard</text>
-  <text class="note" x="566" y="354">redirects a turn stuck</text>
-  <text class="note" x="566" y="370">on the same failure</text>
-  <text class="note" x="566" y="386">before it burns more</text>
-  <rect class="card" x="728" y="312" width="168" height="92" rx="12"/>
-  <text class="text" x="742" y="334">Usage report</text>
-  <text class="note" x="742" y="354">cache hit rate, cost,</text>
-  <text class="note" x="742" y="370">and the steps that</text>
-  <text class="note" x="742" y="386">missed the cache</text>
+  <text class="note" x="38" y="354">system prompt and tools stay byte-equal;</text>
+  <text class="note" x="38" y="370">new tools are appended, not reordered</text>
+  <rect class="card" x="318" y="312" width="284" height="72" rx="12"/>
+  <text class="text" x="332" y="334">Only new steps</text>
+  <text class="note" x="332" y="354">Codex WebSocket and Claude session resume</text>
+  <text class="note" x="332" y="370">send just what is new</text>
+  <rect class="card" x="612" y="312" width="284" height="72" rx="12"/>
+  <text class="text" x="626" y="334">Cheap cache hits</text>
+  <text class="note" x="626" y="354">DeepSeek bills a cache hit at 2–3%</text>
+  <text class="note" x="626" y="370">of the full input price</text>
+  <rect class="card" x="24" y="394" width="284" height="72" rx="12"/>
+  <text class="text" x="38" y="416">Loop guard</text>
+  <text class="note" x="38" y="436">redirects a turn stuck on the same</text>
+  <text class="note" x="38" y="452">failure before it burns more steps</text>
+  <rect class="card" x="318" y="394" width="284" height="72" rx="12"/>
+  <text class="text" x="332" y="416">Plan → execute combo</text>
+  <text class="note" x="332" y="436">an expensive model plans each prompt,</text>
+  <text class="note" x="332" y="452">a cheaper one runs the tool steps</text>
+  <rect class="card" x="612" y="394" width="284" height="72" rx="12"/>
+  <text class="text" x="626" y="416">Usage report</text>
+  <text class="note" x="626" y="436">cache hit rate, cost, and the steps</text>
+  <text class="note" x="626" y="452">that missed the cache</text>
 
-  <text class="note" x="24" y="426">Bars are illustrative. Claude and ChatGPT subscriptions are limited by tokens, and Copilot resends the conversation with every tool call.</text>
+  <text class="note" x="24" y="490">Bars are illustrative. Claude and ChatGPT subscriptions are limited by tokens, and Copilot resends the conversation with every tool call.</text>
 </svg>

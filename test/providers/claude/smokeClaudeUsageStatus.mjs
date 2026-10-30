@@ -121,6 +121,22 @@ try {
   assert.match(shim.messages.at(-1), /No Claude account limits/);
   failing.dispose();
   statusBar.dispose();
+  // Combos skip the account while its session or weekly limit is used up and no usage credits are active.
+  const limitsValues = new Map();
+  const limitsBar = new module.ClaudeAccountUsageStatusBar({ globalState: {
+    get(key) { return limitsValues.get(key); },
+    async update(key, value) { limitsValues.set(key, value); }
+  } }, { async fetchReport() { return ''; } });
+  const resetsAt = Math.floor(Date.now() / 1_000) + 3_600;
+  limitsBar.record({ fiveHour: { utilization: 0.5, resetsAt } });
+  assert.equal(limitsBar.getExhaustedUntil(), undefined);
+  limitsBar.record({ fiveHour: { utilization: 1, resetsAt } });
+  assert.equal(limitsBar.getExhaustedUntil(), resetsAt * 1_000);
+  assert.equal(limitsBar.getExhaustedUntil(resetsAt * 1_000 + 1), undefined, 'a reset limit no longer blocks');
+  limitsBar.record({ isUsingOverage: true });
+  assert.equal(limitsBar.getExhaustedUntil(), undefined, 'usage credits keep the account usable');
+
+  limitsBar.dispose();
   console.log('Claude usage status smoke tests passed.');
 } finally {
   delete globalThis.__claudeUsageTest;

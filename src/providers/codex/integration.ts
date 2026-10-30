@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import type { UsageRecorder } from '../../usage/usageRecorder';
+import type { ActivatedProvider } from '../registry';
 import { CodexAccountUsageStatusBar } from './accountUsageStatusBar';
 import { CodexModelProvider, type UsageSink } from './provider';
 import { CodexAuthLock } from './auth/codexAuthLock';
@@ -20,7 +21,7 @@ import { CodexIdentityManager } from './codexIdentity';
 import { registerWebSearchTool } from './hostedTools/webSearchTool';
 import { showDoctorReport, showManagementMenu } from '../managementMenu';
 
-export async function activateCodex(context: vscode.ExtensionContext, usageRecorder?: UsageRecorder): Promise<void> {
+export async function activateCodex(context: vscode.ExtensionContext, usageRecorder?: UsageRecorder): Promise<ActivatedProvider> {
   const outputChannel = vscode.window.createOutputChannel('Model Bridge: Codex', { log: true });
   const logger = createCodexLogger(outputChannel, 'extension');
   logger.info('extension.activated', {
@@ -265,6 +266,12 @@ export async function activateCodex(context: vscode.ExtensionContext, usageRecor
     ]))
   );
   void authManager.startPeriodicRefresh();
+  return {
+    provider,
+    availability: {
+      exhaustedUntil: (modelId, now) => accountUsageStatusBar.getExhaustedUntil(modelId.replace(/^codex::/, ''), now)
+    }
+  };
 }
 
 

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.5.0
 
 ### DeepSeek (new provider)
 
@@ -9,17 +9,28 @@
 - The account balance appears in the status bar (`DeepSeek: $12.50`) and refreshes on startup, every 5 minutes, and after requests. The usage report shows DeepSeek cache hits and an estimated cost at the list price, including peak hours.
 - Manage menu, Doctor, and Test Connection like the other providers.
 
+### Combos (new)
+
+- New **Combos** model-picker group. A `fallback` combo in `modelBridge.combos` lists models from the other providers, for example `["claude:opus", "codex:gpt-5.5", "deepseek:deepseek-v4-pro"]`. A conversation stays on one model and moves to the next only when it fails before answering (rate limit, exhausted quota or balance, server or network error, sign-in problem); a failed model cools down for 60 s, doubling up to 15 min, or as long as its `Retry-After` says.
+- A `planExecute` combo, for example `{ "planner": "claude:opus", "executor": "deepseek:deepseek-flash" }`, lets the planner write a short plan for each new prompt, shown under **Plan**, and the executor carry it out with the tools in the same request. Tool steps go to the executor only; when it looks stuck, the planner writes a revised plan once per turn. Without a planner the executor runs alone, and when the executor fails before answering, the planner takes over.
+- Combos skip a model whose own status already shows it exhausted (a used-up Claude or Codex session or weekly limit, or a DeepSeek balance that cannot pay), without a failed request.
+- A combo offers tools and image input only when every model supports them and uses the smallest context window. Usage is recorded under the model that answered.
+- Manage menu, Doctor (what each target resolves to, cooldowns, exhausted accounts, skipped entries), and logs that record only routing decisions.
+
 ### Loop guard (all providers)
 
 - New opt-in `modelBridge.loopGuard.enabled`: when an Agent mode turn keeps hitting the same failure, the model gets one short redirect built from its own actions, and if the turn is still stuck the response says so. It never stops a turn, stores nothing, and keeps prompt caches and continuation intact. `modelBridge.loopGuard.sensitivity` picks the thresholds. Adapted from [TokenEconomizer](https://github.com/microsoft/TokenEconomizer) (Apache-2.0).
 
 ### All providers
 
+- OpenAI-compatible, LM Studio, and DeepSeek HTTP errors keep their status and `Retry-After`, and Codex rate-limit errors keep their retry delay, so combos can time their cooldown.
 - Fixed dependency advisories in the packaging tools (`@azure/msal-node`, `qs`) and updated `openai` to 7.45.1, `https-proxy-agent` to 9.1.0, TypeScript to 7.0, and esbuild to 0.28.
 
 ### Documentation
 
 - The README shows how Model Bridge works and how it saves tokens.
+- New diagram of how combos route requests; the other diagrams show combos too.
+- New extension icon with all five providers around the bridge.
 
 ## 1.4.1
 

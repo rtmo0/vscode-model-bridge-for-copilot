@@ -1,3 +1,5 @@
+import type { RetryAfterError } from '../providerError';
+
 /** Backend limit semantics, independent of VS Code's UI and transport. */
 export class ResponsesQuotaExceededError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -43,9 +45,11 @@ export function toChatLimitError(error: ResponsesQuotaExceededError | ResponsesR
   const message = quota
     ? `Codex usage limit reached. ${retryHint ?? 'Try again after your usage resets'}, or switch accounts.`
     : `Codex is temporarily rate limited. ${retryHint ?? 'Try again shortly'}.`;
-  const result = new Error(message);
+  const result: RetryAfterError = new Error(message);
   result.name = quota ? 'ChatQuotaExceeded' : 'ChatRateLimited';
   result.stack = undefined;
+  // Read in-process by combos to time their cooldown; it never reaches Chat.
+  if (!quota && error.retryDelayMs !== undefined) result.retryAfterMs = error.retryDelayMs;
   return result;
 }
 

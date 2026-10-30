@@ -1,11 +1,12 @@
 import * as vscode from 'vscode';
 import type { UsageRecorder } from '../../usage/usageRecorder';
+import type { ActivatedProvider } from '../registry';
 import { isInsecureRemoteURL, LmStudioModelProvider } from './provider';
 import { showDoctorReport, showManagementMenu } from '../managementMenu';
 
 const DOCUMENTATION_URL = 'https://lmstudio.ai/docs/developer/core/server';
 
-export function activateLmStudio(context: vscode.ExtensionContext, usageRecorder?: UsageRecorder): LmStudioModelProvider {
+export function activateLmStudio(context: vscode.ExtensionContext, usageRecorder?: UsageRecorder): ActivatedProvider {
   const output = vscode.window.createOutputChannel('Model Bridge: LM Studio', { log: true });
   const provider = new LmStudioModelProvider(context, output, usageRecorder);
   context.subscriptions.push(
@@ -65,7 +66,7 @@ export function activateLmStudio(context: vscode.ExtensionContext, usageRecorder
       ] }
     ]))
   );
-  return provider;
+  return { provider };
 }
 
 async function testLmStudioConnection(provider: LmStudioModelProvider): Promise<void> {

@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 500" width="920" height="500" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 558" width="920" height="558" role="img" aria-labelledby="title desc">
   <title id="title">How Model Bridge works</title>
-  <desc id="desc">VS Code Chat and Agent mode send the prompt, the conversation and the workspace tools to Model Bridge, which runs inside VS Code. It speaks each provider's protocol, keeps the prompt cache warm, watches for stuck turns and counts tokens. Requests go to Claude, Codex, DeepSeek, LM Studio or an OpenAI-compatible server, and the answer, thinking, tool calls and usage come back to VS Code.</desc>
+  <desc id="desc">VS Code Chat and Agent mode send the prompt, the conversation and the workspace tools to Model Bridge, which runs inside VS Code. It speaks each provider's protocol, keeps the prompt cache warm, watches for stuck turns, counts tokens and routes combos: a fallback to the next model, or a planner with a cheaper executor. Requests go to Claude, Codex, DeepSeek, LM Studio or an OpenAI-compatible server, and the answer, thinking, tool calls and usage come back to VS Code.</desc>
   <defs>
     <style>
       .bg { fill: #f6f8fa; }
@@ -39,7 +39,7 @@
     </marker>
   </defs>
 
-  <rect class="bg" width="920" height="500" rx="16"/>
+  <rect class="bg" width="920" height="558" rx="16"/>
 
   <!-- VS Code -->
   <text class="label" x="24" y="40">IN · VS CODE</text>
@@ -54,7 +54,7 @@
   <text class="note" x="40" y="224">edit, terminal, tests, MCP</text>
   <rect class="card" x="24" y="248" width="210" height="52" rx="12"/>
   <text class="text" x="40" y="270">Model picker</text>
-  <text class="note" x="40" y="288">one group per provider</text>
+  <text class="note" x="40" y="288">a group per provider + Combos</text>
 
   <path class="arrow" d="M234 82H286" marker-end="url(#tip)"/>
   <path class="arrow" d="M234 146H286" marker-end="url(#tip)"/>
@@ -62,7 +62,7 @@
   <path class="arrow" d="M234 274H286" marker-end="url(#tip)"/>
 
   <!-- Model Bridge -->
-  <rect class="bridge" x="292" y="40" width="280" height="300" rx="14" stroke-width="2"/>
+  <rect class="bridge" x="292" y="40" width="280" height="358" rx="14" stroke-width="2"/>
   <text class="title" x="308" y="68">Model Bridge</text>
   <text class="note" x="308" y="88">inside VS Code, on your machine</text>
   <rect class="step" x="308" y="102" width="248" height="50" rx="10"/>
@@ -77,6 +77,9 @@
   <rect class="step" x="308" y="276" width="248" height="50" rx="10"/>
   <text class="text" x="324" y="297">4 · Count every token</text>
   <text class="note" x="324" y="315">status bar and usage report</text>
+  <rect class="step" x="308" y="334" width="248" height="50" rx="10"/>
+  <text class="text" x="324" y="355">5 · Route combos</text>
+  <text class="note" x="324" y="373">fallback, plan → execute</text>
 
   <path class="arrow" d="M572 190H630" marker-end="url(#tip)"/>
   <text class="note" x="578" y="180">requests</text>
@@ -100,21 +103,21 @@
   <text class="note" x="652" y="299">Ollama, llama.cpp, vLLM, any /v1</text>
 
   <!-- Back in VS Code -->
-  <path class="arrow" d="M766 308V386" marker-end="url(#tip)"/>
-  <text class="note" x="776" y="352">streamed back</text>
-  <text class="label" x="24" y="378">OUT · BACK IN VS CODE</text>
-  <rect class="card" x="24" y="392" width="280" height="52" rx="12"/>
-  <text class="text" x="40" y="414">Answer and thinking</text>
-  <text class="note" x="40" y="432">streamed as the model writes</text>
-  <rect class="card" x="320" y="392" width="280" height="52" rx="12"/>
-  <text class="text" x="336" y="414">Tool calls</text>
-  <text class="note" x="336" y="432">VS Code asks, runs them, sends results</text>
-  <rect class="card" x="616" y="392" width="280" height="52" rx="12"/>
-  <text class="text" x="632" y="414">Usage</text>
-  <text class="note" x="632" y="432">limits, balance, cost and cache hits</text>
+  <path class="arrow" d="M766 308V444" marker-end="url(#tip)"/>
+  <text class="note" x="776" y="410">streamed back</text>
+  <text class="label" x="24" y="436">OUT · BACK IN VS CODE</text>
+  <rect class="card" x="24" y="450" width="280" height="52" rx="12"/>
+  <text class="text" x="40" y="472">Answer and thinking</text>
+  <text class="note" x="40" y="490">streamed as the model writes</text>
+  <rect class="card" x="320" y="450" width="280" height="52" rx="12"/>
+  <text class="text" x="336" y="472">Tool calls</text>
+  <text class="note" x="336" y="490">VS Code asks, runs them, sends results</text>
+  <rect class="card" x="616" y="450" width="280" height="52" rx="12"/>
+  <text class="text" x="632" y="472">Usage</text>
+  <text class="note" x="632" y="490">limits, balance, cost and cache hits</text>
 
-  <path class="loop" d="M460 392V362H129V306" marker-end="url(#tip)"/>
-  <text class="note" x="140" y="354">tool results join the conversation · next step</text>
+  <path class="loop" d="M460 450V420H129V306" marker-end="url(#tip)"/>
+  <text class="note" x="140" y="412">tool results join the conversation · next step</text>
 
-  <text class="note" x="24" y="478">VS Code runs every tool. Keys stay in VS Code SecretStorage, Claude sign-in stays with Claude Code, and logs keep counts, never prompts or code.</text>
+  <text class="note" x="24" y="536">VS Code runs every tool. Keys stay in VS Code SecretStorage, Claude sign-in stays with Claude Code, and logs keep counts, never prompts or code.</text>
 </svg>

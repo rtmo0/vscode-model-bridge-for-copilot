@@ -643,6 +643,21 @@ function formatCompactText(metric: AccountUsageDisplayMetric): string | undefine
   }
 }
 
+/**
+ * When a rate-limit window that applies to `model` is used up, the time it resets (epoch ms). Conservative: the
+ * snapshot must be fresh, the reset known, and no credits balance able to cover the request.
+ */
+export function getCodexExhaustedUntil(snapshot: CodexAccountUsageSnapshot, model: string, now = Date.now()): number | undefined {
+  if (now - snapshot.fetchedAt > STALE_AFTER_MS || (snapshot.creditsBalance ?? 0) > 0) return undefined;
+  let until: number | undefined;
+  for (const limit of snapshot.limits) {
+    if (limit.usedPercent < 100 || limit.resetAt === undefined || limit.resetAt <= now) continue;
+    if (limit.limitName && !isLimitRelatedToModel(limit, model)) continue;
+    until = Math.max(until ?? 0, limit.resetAt);
+  }
+  return until;
+}
+
 function buildTooltip(
   snapshot: CodexAccountUsageSnapshot,
   metric: AccountUsageDisplayMetric,

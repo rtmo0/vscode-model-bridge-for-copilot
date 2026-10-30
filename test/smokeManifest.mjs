@@ -21,6 +21,7 @@ assert.deepEqual([...registeredProviders].sort(), [...contributedProviders].sort
 assert.deepEqual([...contributedProviders].sort(), [
   'model-bridge-claude',
   'model-bridge-codex',
+  'model-bridge-combos',
   'model-bridge-deepseek',
   'model-bridge-lmstudio',
   'model-bridge-openai-compatible'
@@ -42,6 +43,8 @@ assert.equal(manifest.contributes.configuration.properties['modelBridge.openaiCo
   'workspace settings must not redirect requests that carry stored API tokens');
 assert.equal(manifest.contributes.configuration.properties['modelBridge.deepseek.baseURL'].scope, 'machine',
   'workspace settings must not redirect requests that carry the DeepSeek API key');
+assert.equal(manifest.contributes.configuration.properties['modelBridge.combos'].scope, 'application',
+  'combos route requests to every provider, so workspaces must not redefine them');
 console.log('Model Bridge manifest smoke tests passed.');
 
 async function collectTypeScriptFiles(directory) {

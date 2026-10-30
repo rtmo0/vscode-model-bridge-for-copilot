@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import type { UsageRecorder } from '../../usage/usageRecorder';
+import type { ActivatedProvider } from '../registry';
 import { CLAUDE_ALIAS_IDS } from './modelCatalog';
 import { ClaudeModelProvider, getClaudeProviderConfig } from './provider';
 import { fetchClaudeUsageReport, getClaudeCliStatus, MINIMUM_CLAUDE_CODE_VERSION, streamClaudeResponse } from './cli';
@@ -9,7 +10,7 @@ import { showDoctorReport, showManagementMenu } from '../managementMenu';
 const CLAUDE_CODE_INSTALL_URL = 'https://code.claude.com/docs/en/setup';
 const claudeTerminals = new WeakSet<vscode.Terminal>();
 
-export function activateClaude(context: vscode.ExtensionContext, usageRecorder?: UsageRecorder): void {
+export function activateClaude(context: vscode.ExtensionContext, usageRecorder?: UsageRecorder): ActivatedProvider {
   const output = vscode.window.createOutputChannel('Model Bridge: Claude', { log: true });
   const usageStatusBar = new ClaudeAccountUsageStatusBar(context, {
     fetchReport: () => fetchClaudeUsageReport(getClaudeProviderConfig().claudePath),
@@ -161,7 +162,8 @@ export function activateClaude(context: vscode.ExtensionContext, usageRecorder?:
   );
 
   void syncAccount().catch(() => undefined);
-
+  // Claude's session and weekly limits apply to the whole account.
+  return { provider, availability: { exhaustedUntil: (_modelId, now) => usageStatusBar.getExhaustedUntil(now) } };
 }
 
 function createClaudeTerminal(name: string, args: string[] = []): vscode.Terminal {

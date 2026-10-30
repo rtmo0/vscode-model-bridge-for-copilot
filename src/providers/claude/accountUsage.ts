@@ -95,6 +95,23 @@ export function toLatestRequestUsage(update: ClaudeUsageUpdate): ClaudeLatestReq
   };
 }
 
+/**
+ * When the session or weekly limit is used up and no usage credits are active, the time it resets (epoch ms).
+ * A reset known only as text counts for as long as the snapshot is fresh. Per-model weekly limits are ignored.
+ */
+export function getClaudeExhaustedUntil(snapshot: ClaudeAccountUsageSnapshot, now = Date.now()): number | undefined {
+  if (snapshot.isUsingOverage) return undefined;
+  let until: number | undefined;
+  for (const limit of snapshot.limits) {
+    if ((limit.kind !== '5h' && limit.kind !== 'weekly') || limit.usedPercent < 100) continue;
+    const resetsAt = limit.resetsAt !== undefined
+      ? limit.resetsAt * 1_000
+      : snapshot.fetchedAt + STALE_AFTER_MS;
+    if (resetsAt > now) until = Math.max(until ?? 0, resetsAt);
+  }
+  return until;
+}
+
 export function buildClaudeAccountUsageDisplay(snapshot: ClaudeAccountUsageSnapshot, now = Date.now()): ClaudeAccountUsageDisplay {
   const compactLimits = snapshot.limits.filter((limit) => limit.kind === '5h' || limit.kind === 'weekly');
   const lines = ['Claude account limits'];

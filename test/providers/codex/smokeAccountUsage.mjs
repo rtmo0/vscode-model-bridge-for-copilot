@@ -33,6 +33,7 @@ const {
   buildCodexAccountUsageDisplay,
   fetchCodexAccountUsage,
   getCodexAccountUsageURLs,
+  getCodexExhaustedUntil,
   parseCodexAccountUsage
 } = require(bundlePath);
 
@@ -315,6 +316,18 @@ try {
     'Codex account usage requires a ChatGPT browser sign-in',
     'api key credential guard'
   );
+
+  // Combos skip Codex only while a fresh snapshot shows a used-up window that applies to the model.
+  const now = Date.now();
+  const window = (usedPercent, extra = {}) => ({ windowMinutes: 300, usedPercent, remainingPercent: 100 - usedPercent, resetAt: now + 60_000, ...extra });
+  const usage = (limits, extra = {}) => ({ fetchedAt: now, creditBudgets: [], limits, ...extra });
+  assertEqual(getCodexExhaustedUntil(usage([window(100)]), 'gpt-5.5', now), now + 60_000, 'a used-up general window blocks until it resets');
+  assertEqual(getCodexExhaustedUntil(usage([window(99)]), 'gpt-5.5', now), undefined, 'a window with room left does not block');
+  assertEqual(getCodexExhaustedUntil(usage([window(100, { limitName: 'gpt-5.5-codex-spark' })]), 'gpt-5.5', now), now + 60_000, 'a used-up window of the same model blocks');
+  assertEqual(getCodexExhaustedUntil(usage([window(100, { limitName: 'o9-mini' })]), 'gpt-5.5', now), undefined, 'another model limit does not block');
+  assertEqual(getCodexExhaustedUntil(usage([window(100)], { creditsBalance: 5 }), 'gpt-5.5', now), undefined, 'credits can pay');
+  assertEqual(getCodexExhaustedUntil(usage([window(100)], { fetchedAt: now - 16 * 60_000 }), 'gpt-5.5', now), undefined, 'stale data does not block');
+  assertEqual(getCodexExhaustedUntil(usage([window(100, { resetAt: undefined })]), 'gpt-5.5', now), undefined, 'an unknown reset does not block');
 
   console.log('Smoke test passed: account usage request, parsing, and display priority are correct.');
 } finally {

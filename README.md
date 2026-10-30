@@ -3,16 +3,18 @@
 
   <h1>Model Bridge for Copilot</h1>
 
-  <p><strong>Claude subscriptions, ChatGPT Codex, DeepSeek, LM Studio, Ollama, llama.cpp, vLLM, and other OpenAI-compatible models in native VS Code Chat.</strong></p>
+  <p><strong>Claude subscriptions, ChatGPT Codex, DeepSeek, LM Studio, Ollama, llama.cpp, vLLM, and other OpenAI-compatible models in native VS Code Chat — on their own or combined.</strong></p>
 
   <a href="https://boosty.to/rtm00"><img src="https://img.shields.io/badge/Boosty-support-F15F2C?logo=boosty&amp;logoColor=white" alt="Support on Boosty"></a>
 </div>
 
 Model Bridge for Copilot is a multi-provider VS Code Language Model Provider. It keeps the native Chat and Agent experience while letting you choose between a signed-in Claude Code account, ChatGPT Codex, models running locally in LM Studio, the DeepSeek API, and any OpenAI-compatible server such as Ollama, llama.cpp, or vLLM.
 
+Combos join these models into one picker entry: a **fallback** that moves to the next provider when one hits a rate limit, runs out of quota, or goes down, and a **plan → execute** pair where an expensive model plans each prompt and a cheaper one does the tool steps.
+
 > This is an independent community extension. It is not affiliated with or endorsed by Anthropic, OpenAI, DeepSeek, Microsoft, or LM Studio.
 
-![How Model Bridge works: VS Code Chat sends the prompt, conversation and tools to Model Bridge, which speaks each provider's protocol, keeps the prompt cache warm, watches for stuck turns and counts tokens; Claude, Codex, DeepSeek, LM Studio or an OpenAI-compatible server stream the answer, thinking and tool calls back to VS Code](docs/how-it-works.png)
+![How Model Bridge works: VS Code Chat sends the prompt, conversation and tools to Model Bridge, which speaks each provider's protocol, keeps the prompt cache warm, watches for stuck turns, counts tokens and routes combos; Claude, Codex, DeepSeek, LM Studio or an OpenAI-compatible server stream the answer, thinking and tool calls back to VS Code](docs/how-it-works.png)
 
 ## Providers
 
@@ -24,7 +26,7 @@ Model Bridge for Copilot is a multi-provider VS Code Language Model Provider. It
 | **LM Studio** | No authentication by default; optional local server token in VS Code SecretStorage | Native model metadata plus OpenAI-compatible streaming chat and function tools |
 | **OpenAI-Compatible** | Optional API token per endpoint in VS Code SecretStorage, bound to the endpoint URL | Ollama, llama.cpp server, vLLM, or any `/v1/chat/completions` server, with per-server metadata discovery |
 
-Each provider has its own model-picker group and management command. Run **Model Bridge: Manage Providers** to open the unified entry point.
+Each provider has its own model-picker group and management command. Run **Model Bridge: Manage Providers** to open the unified entry point. A **Combos** group can join models from these providers into one picker entry: a fallback to the next model when one is rate limited or out of quota, or an expensive planner with a cheaper executor ([details](#combos)).
 
 ## Highlights
 
@@ -41,6 +43,7 @@ Each provider has its own model-picker group and management command. Run **Model
 - Thinking Effort in the model picker for local reasoning models, and `<think>…</think>` blocks shown as thinking instead of answer text.
 - DeepSeek models with 1M context, thinking effort up to Max, Agent-mode tool calls, cache-hit usage, and list-price cost in the usage report.
 - An optional loop guard for Agent mode on every provider that redirects a turn stuck on the same failure ([details](#loop-guard)).
+- Combos: one picker entry that moves to the next provider when a model is rate limited, out of quota, or unreachable, or that lets an expensive model plan and a cheaper one do the tool steps ([details](#combos)).
 - Safe diagnostics for every provider without logging prompts, responses, credentials, or tool contents.
 
 ## Quick start
@@ -140,6 +143,7 @@ Useful commands:
 - `Model Bridge: OpenAI-Compatible: Add Endpoint`
 - `Model Bridge: OpenAI-Compatible: Run Doctor`
 - `Model Bridge: OpenAI-Compatible: Test Connection`
+- `Model Bridge: Combos: Run Doctor`
 
 Provider settings live under **Settings → Extensions → Model Bridge** and use these sections:
 
@@ -148,6 +152,7 @@ Provider settings live under **Settings → Extensions → Model Bridge** and us
 - `modelBridge.deepseek.*`
 - `modelBridge.lmstudio.*`
 - `modelBridge.openaiCompatible.*`
+- `modelBridge.combos`
 - `modelBridge.loopGuard.*`
 - `modelBridge.usage.*`
 
@@ -159,7 +164,7 @@ Settings under `anthropicForCopilot.*` and `codexModelProvider.*` are copied to 
 
 Claude and ChatGPT subscriptions are limited by tokens, DeepSeek bills them, and agent sessions resend the conversation with every tool call. Model Bridge keeps the start of each request byte-for-byte the same, so the backend reads it from the prompt cache, and sends only what is new where the backend keeps state:
 
-![How Model Bridge saves tokens: when the prompt prefix changes, every agent step pays full price for the whole history; with Model Bridge earlier steps are read from the prompt cache and only the new step is fresh input](docs/token-savings.png)
+![How Model Bridge saves tokens: when the prompt prefix changes, every agent step pays full price for the whole history; with Model Bridge earlier steps are read from the prompt cache and only the new step is fresh input, and a plan → execute combo hands the tool steps to a cheaper model](docs/token-savings.png)
 
 What each provider does by default:
 
@@ -169,6 +174,7 @@ What each provider does by default:
 - **Codex:** WebSocket continuation sends only new items with `previous_response_id`, and `prompt_cache_key` stays the same for the whole conversation, including after forks, edited messages, and window reloads. When the history must be replayed in full (HTTP transport or a dropped WebSocket), the replay keeps the encrypted reasoning of the current tool loop. Keep `modelBridge.codex.transport` on `auto`; `http` replays the full history for tool results.
 - **DeepSeek:** the conversation is sent unchanged from step to step, including the earlier reasoning DeepSeek requires, so its context cache matches; a cache hit costs 2–3% of the full input price.
 - **All providers:** the optional [loop guard](#loop-guard) redirects an agent turn that keeps hitting the same failure, before it spends more steps; its note is inserted at a fixed place, so it does not break the cache.
+- **Combos:** a [plan → execute combo](#combos) spends the expensive model only on the plan and runs the many tool steps on a cheaper one; the plan stays in the history, so the executor's cache keeps working.
 
 Further savings you can choose:
 
@@ -205,6 +211,42 @@ When a turn is stuck, the model gets one short note, built only from its own act
 
 The guard keeps no data: each request recomputes it from the conversation, so the note stays at the same place in the history and prompt caches and Claude and Codex continuation keep working. The logs record only counts. The heuristic is adapted from [TokenEconomizer](https://github.com/microsoft/TokenEconomizer).
 
+### Combos
+
+A combo is a model in the **Combos** group of the model picker that sends each request to the other Model Bridge providers.
+
+![How combos route requests: a fallback combo tries Claude Opus, which is rate limited and cools down, then Codex, which answers and keeps the conversation, with DeepSeek on standby; a plan → execute combo lets Claude Opus write a short plan without tools, DeepSeek Flash carry it out with every tool step, and the planner write a revised plan once per turn when the executor is stuck](docs/combos.png)
+
+Define combos in `modelBridge.combos`:
+
+```json
+"modelBridge.combos": [
+  { "name": "Coding", "strategy": "fallback", "targets": ["claude:opus", "codex:gpt-5.5", "deepseek:deepseek-v4-pro"] },
+  { "name": "Local first", "targets": ["openaiCompatible:Ollama/qwen3:30b", "lmstudio:qwen/qwen3-30b-a3b"] },
+  { "name": "Cheap agent", "strategy": "planExecute", "planner": "claude:opus", "executor": "deepseek:deepseek-flash" }
+]
+```
+
+Each target is `provider:model`, with provider `claude`, `codex`, `deepseek`, `lmstudio`, or `openaiCompatible`. The model is a model id from that provider's group (the `anthropic::`, `codex::`, or `lmstudio::` prefix is optional) or its name as shown in the picker; OpenAI-Compatible models can also be written `<endpoint name>/<model>`.
+
+A `fallback` combo tries its targets in order:
+
+- A conversation stays on the target that answered it. It moves to the next target only when the current one fails **before answering**: rate limits, exhausted quota or balance, server and network errors, timeouts, and sign-in problems. After any text, thinking, or tool call has been streamed, the error is shown as usual; a cancelled request is never repeated elsewhere.
+- A failed target cools down for 60 s, doubling up to 15 min, or for the time its `Retry-After` names, and is reset by the next success. A target whose own status already shows it exhausted — a used-up Claude or Codex session or weekly limit, or a DeepSeek balance that cannot pay — is skipped the same way without a failed request. New conversations skip these targets; when every target is unavailable, the one that recovers first is tried.
+- Errors that every target would hit, such as a conversation that exceeds the context window, are not retried.
+- The combo offers tool calling and image input only when every target supports them, and its context window is the smallest of its targets, so a fallback never overflows a smaller model.
+
+A `planExecute` combo uses an expensive model for judgment and a cheaper one for the many tool steps of an agent turn:
+
+1. For each new prompt, the `planner` gets the conversation without tools and writes a short numbered plan. It is shown at the start of the response under **Plan**, so it becomes part of the conversation.
+2. In the same request, the `executor` carries out the plan with the tools. Every later tool step of the turn goes to the executor only, and the plan stays where it is in the history, so the executor's prompt cache keeps working.
+3. When the executor looks stuck — the [loop guard](#loop-guard) heuristic, which combos run even when `modelBridge.loopGuard.enabled` is off — the planner writes a **Revised plan** from what was tried, once per turn, and the executor continues with it.
+4. If the planner fails, the executor continues without a plan. If the executor fails before answering, the planner carries out the turn itself with the tools, and the conversation stays on it.
+
+The planner's thinking and token usage do not appear in the response; its usage is recorded under its own model in the usage report.
+
+Switching models starts a new prompt cache and ends Claude and Codex continuation for that conversation, so a fallback costs one full-price request; the conversation then stays on its new target. A plan likewise starts a new Claude Code session for the step after it when `modelBridge.claude.sessionContinuation` is on. Usage is recorded under the target that answered, so the usage report and status bars stay correct. Each target uses its own default settings (effort, context size, temperature). **Model Bridge: Combos: Run Doctor** shows what every target resolves to, which ones are cooling down, and entries that were skipped as invalid.
+
 ## Privacy and security
 
 - Claude credentials remain owned by the official Claude Code CLI.
@@ -216,6 +258,7 @@ The guard keeps no data: each request recomputes it from the conversation, so th
 - Temporary Claude prompt files use restricted permissions and are always removed.
 - DeepSeek reasoning is kept in memory only, so it can be sent back to DeepSeek as its API requires; it is never written to disk or logged.
 - The loop guard reads tool results in memory only and stores nothing.
+- Combos call the other providers inside the extension and keep the target of each conversation in memory only, keyed by a hash of its first message; their logs record only combo, target, and failure reason.
 
 ## Remote workspaces
 

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import * as vscode from 'vscode';
+import { parseRetryAfter, ProviderHttpError } from '../providerError';
 import { ChatCompletionStreamParser, type ChatCompletionUsage } from './protocol';
 import type { AssistantReplayKey } from './reasoningReplay';
 
@@ -399,7 +400,7 @@ export function formatTokenCount(value: number): string {
   return value >= 1_000_000 ? `${Number((value / 1_000_000).toFixed(1))}M` : `${Math.round(value / 1_000)}K`;
 }
 
-export async function createHttpError(response: Response, prefix: string, serverName: string): Promise<Error> {
+export async function createHttpError(response: Response, prefix: string, serverName: string): Promise<ProviderHttpError> {
   const body = (await response.text()).slice(0, MAX_ERROR_BYTES);
   let message = body;
   try {
@@ -411,9 +412,13 @@ export async function createHttpError(response: Response, prefix: string, server
     }
   } catch {}
   if (response.status === 401 || response.status === 403) {
-    return new Error(`${serverName} rejected authentication. Set or clear the configured API token.`);
+    return new ProviderHttpError(`${serverName} rejected authentication. Set or clear the configured API token.`, response.status);
   }
-  return new Error(`${prefix}: ${response.status} ${response.statusText}${message ? ` — ${message}` : ''}`);
+  return new ProviderHttpError(
+    `${prefix}: ${response.status} ${response.statusText}${message ? ` — ${message}` : ''}`,
+    response.status,
+    parseRetryAfter(response.headers)
+  );
 }
 
 export function isNetworkError(error: unknown): boolean {

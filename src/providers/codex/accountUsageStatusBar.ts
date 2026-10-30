@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { buildCodexAccountUsageDisplay, fetchCodexAccountUsage, type CodexAccountUsageSnapshot } from './accountUsage';
+import { buildCodexAccountUsageDisplay, fetchCodexAccountUsage, getCodexExhaustedUntil, type CodexAccountUsageSnapshot } from './accountUsage';
 import type { CodexAuthManager } from './auth/codexAuthManager';
 import { getProviderConfig } from './config';
 import { getApiCredentials, getCodexCredentialsForAccount, type ApiCredentials } from './secrets';
@@ -71,6 +71,12 @@ export class CodexAccountUsageStatusBar implements vscode.Disposable, UsageSink 
 
     this.selectedModel = model;
     this.renderActive();
+  }
+
+  /** For combos: when the active account cannot serve `model` until a limit resets, the reset time. */
+  getExhaustedUntil(model: string, now = Date.now()): number | undefined {
+    const active = [...this.usageByAccount.values()].find((entry) => entry.isActive);
+    return active?.snapshot ? getCodexExhaustedUntil(active.snapshot, model, now) : undefined;
   }
 
   async refresh(): Promise<void> {

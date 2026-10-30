@@ -29,33 +29,44 @@
   <rect x="18" y="18" width="476" height="476" rx="110" fill="none" stroke="#FFF" stroke-opacity=".1" stroke-width="3"/>
 
   <g filter="url(#shadow)">
-    <!-- Symmetric bridge connecting three independent model providers. -->
-    <path d="M256 155L256 206M174 350L218 309M338 350L294 309" fill="none" stroke="#F5EFE8" stroke-opacity=".84" stroke-width="22" stroke-linecap="round"/>
-    <path d="M256 103C349 103 414 176 414 265C414 353 344 420 256 420C168 420 98 353 98 265C98 176 163 103 256 103Z"
-          fill="none" stroke="url(#link)" stroke-width="24" stroke-linecap="round" stroke-dasharray="130 28"/>
+    <!-- The bridge routes between five independent providers; the ring is the path combos take between them. -->
+    <path d="M256.0 176.0L256.0 154.0M337.8 235.4L358.7 228.6M306.5 331.6L319.5 349.4M205.5 331.6L192.5 349.4M174.2 235.4L153.3 228.6" fill="none" stroke="#F5EFE8" stroke-opacity=".84" stroke-width="18" stroke-linecap="round"/>
+    <circle cx="256" cy="262" r="166" fill="none" stroke="url(#link)" stroke-width="20" stroke-linecap="round" stroke-dasharray="44 26"/>
 
     <!-- Claude subscription node. -->
-    <circle cx="256" cy="112" r="62" fill="#2B1D24" stroke="#F19B69" stroke-width="13"/>
-    <path d="M256 76V148M220 112H292M231 87L281 137M281 87L231 137" stroke="#FFD8C0" stroke-width="12" stroke-linecap="round"/>
-    <circle cx="256" cy="112" r="14" fill="#F19B69"/>
-
-    <!-- Codex/cloud coding node. -->
-    <circle cx="146" cy="386" r="62" fill="#132821" stroke="#5AD39A" stroke-width="13"/>
-    <path d="M130 360L105 386L130 412M162 360L187 386L162 412M154 350L138 422" fill="none" stroke="#C1F6D9" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
-
+    <g transform="translate(256.0 96.0)">
+      <circle r="54" fill="#2B1D24" stroke="#F19B69" stroke-width="12"/>
+      <path d="M0 -33V33M-33 0H33M-23 -23L23 23M23 -23L-23 23" stroke="#FFD8C0" stroke-width="11" stroke-linecap="round"/><circle r="13" fill="#F19B69"/>
+    </g>
+    <!-- DeepSeek API node. -->
+    <g transform="translate(413.9 210.7)">
+      <circle r="54" fill="#161B3A" stroke="#6F86FF" stroke-width="12"/>
+      <path d="M-34 6C-34 -12 -18 -21 2 -19C18 -20 27 -11 30 -2L38 -13C41 -6 41 4 37 11L30 6C25 19 10 26 -8 24C-24 22 -34 15 -34 6Z" fill="none" stroke="#D3DBFF" stroke-width="9" stroke-linejoin="round"/><circle cx="-14" cy="-3" r="4.5" fill="#6F86FF"/><path d="M-12 -24V-33M-12 -33C-15 -38 -20 -39 -24 -37M-12 -33C-9 -38 -4 -39 0 -37" fill="none" stroke="#D3DBFF" stroke-width="6" stroke-linecap="round"/>
+    </g>
     <!-- LM Studio/local server node. -->
-    <circle cx="366" cy="386" r="62" fill="#112A34" stroke="#61D4EE" stroke-width="13"/>
-    <rect x="332" y="352" width="68" height="27" rx="9" fill="none" stroke="#C4F1FA" stroke-width="9"/>
-    <rect x="332" y="393" width="68" height="27" rx="9" fill="none" stroke="#C4F1FA" stroke-width="9"/>
-    <circle cx="382" cy="365.5" r="5" fill="#61D4EE"/>
-    <circle cx="382" cy="406.5" r="5" fill="#61D4EE"/>
+    <g transform="translate(353.6 396.3)">
+      <circle r="54" fill="#112A34" stroke="#61D4EE" stroke-width="12"/>
+      <rect x="-31" y="-31" width="62" height="25" rx="8" fill="none" stroke="#C4F1FA" stroke-width="8.5"/><rect x="-31" y="6" width="62" height="25" rx="8" fill="none" stroke="#C4F1FA" stroke-width="8.5"/><circle cx="15" cy="-18.5" r="4.5" fill="#61D4EE"/><circle cx="15" cy="18.5" r="4.5" fill="#61D4EE"/>
+    </g>
+    <!-- Codex/cloud coding node. -->
+    <g transform="translate(158.4 396.3)">
+      <circle r="54" fill="#132821" stroke="#5AD39A" stroke-width="12"/>
+      <path d="M-14 -24L-37 0L-14 24M14 -24L37 0L14 24M7 -33L-7 33" fill="none" stroke="#C1F6D9" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <!-- OpenAI-compatible server node. -->
+    <g transform="translate(98.1 210.7)">
+      <circle r="54" fill="#24183A" stroke="#C08BF2" stroke-width="12"/>
+      <path d="M-11 -33V-17M11 -33V-17" stroke="#ECDDFB" stroke-width="9" stroke-linecap="round"/><path d="M-23 -17H23V-3C23 11 13 20 0 20C-13 20 -23 11 -23 -3Z" fill="none" stroke="#ECDDFB" stroke-width="9" stroke-linejoin="round"/><path d="M0 20V34" stroke="#ECDDFB" stroke-width="9" stroke-linecap="round"/>
+    </g>
 
     <!-- Central VS Code model-routing bridge. -->
-    <path d="M256 196L320 233V307L256 344L192 307V233L256 196Z" fill="#171D2B" stroke="#F5EFE8" stroke-width="14"/>
-    <path d="M221 247C221 229 235 215 253 215H259C277 215 291 229 291 247V273C291 294 274 311 253 311H240L222 325L226 305C216 297 210 286 210 273V258C210 252 215 247 221 247Z"
-          fill="#202A39" stroke="url(#link)" stroke-width="10" stroke-linejoin="round"/>
-    <circle cx="241" cy="264" r="7" fill="#F19B69"/>
-    <circle cx="271" cy="264" r="7" fill="#61D4EE"/>
-    <path d="M241 287C250 294 262 294 271 287" fill="none" stroke="#F5EFE8" stroke-width="7" stroke-linecap="round"/>
+    <g transform="translate(0 -8)">
+      <path d="M256 196L320 233V307L256 344L192 307V233L256 196Z" fill="#171D2B" stroke="#F5EFE8" stroke-width="14"/>
+      <path d="M221 247C221 229 235 215 253 215H259C277 215 291 229 291 247V273C291 294 274 311 253 311H240L222 325L226 305C216 297 210 286 210 273V258C210 252 215 247 221 247Z"
+            fill="#202A39" stroke="url(#link)" stroke-width="10" stroke-linejoin="round"/>
+      <circle cx="241" cy="264" r="7" fill="#F19B69"/>
+      <circle cx="271" cy="264" r="7" fill="#61D4EE"/>
+      <path d="M241 287C250 294 262 294 271 287" fill="none" stroke="#F5EFE8" stroke-width="7" stroke-linecap="round"/>
+    </g>
   </g>
 </svg>

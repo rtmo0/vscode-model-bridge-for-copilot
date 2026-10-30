@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import type { UsageRecorder } from '../../usage/usageRecorder';
+import type { ActivatedProvider } from '../registry';
 import { showDoctorReport, showManagementMenu } from '../managementMenu';
 import { formatTokenCount, isInsecureRemoteURL } from '../openaiCompatible/chatCompletions';
 import { DeepSeekBalanceStatusBar, formatDeepSeekBalance } from './balanceStatusBar';
@@ -8,7 +9,7 @@ import { DEEPSEEK_SECTION, DeepSeekModelProvider } from './provider';
 const DOCUMENTATION_URL = 'https://api-docs.deepseek.com/';
 const PLATFORM_URL = 'https://platform.deepseek.com/';
 
-export function activateDeepSeek(context: vscode.ExtensionContext, usageRecorder?: UsageRecorder): DeepSeekModelProvider {
+export function activateDeepSeek(context: vscode.ExtensionContext, usageRecorder?: UsageRecorder): ActivatedProvider {
   const output = vscode.window.createOutputChannel('Model Bridge: DeepSeek', { log: true });
   const provider = new DeepSeekModelProvider(context, output, usageRecorder, (summary) => balanceBar.recordRequest(summary));
   const balanceBar = new DeepSeekBalanceStatusBar({ fetchBalance: () => provider.getBalance(), output });
@@ -84,7 +85,7 @@ export function activateDeepSeek(context: vscode.ExtensionContext, usageRecorder
     ]))
   );
   void provider.hasApiKey().then((hasKey) => hasKey ? balanceBar.refresh() : undefined);
-  return provider;
+  return { provider, availability: { exhaustedUntil: (_modelId, now) => balanceBar.getExhaustedUntil(now) } };
 }
 
 async function testConnection(provider: DeepSeekModelProvider, statusBar: DeepSeekBalanceStatusBar): Promise<void> {

@@ -212,6 +212,18 @@ try {
   const fromHistory = await ask([user('Find it'), ...toolRound('call_vscode', [new ThinkingPart('Kept by VS Code')])]);
   assert.equal(fromHistory.body.messages[1].reasoning_content, 'Kept by VS Code');
 
+  // As a plan → execute combo executor: the plan is an assistant message without tool calls, so thinking stays on,
+  // and the next step finds the executor's reasoning by tool call ID although the plan shares its message.
+  const plan = '**Plan · Opus**\n\n1. Look it up\n\n';
+  const executing = await ask([user('Find it'), { role: 2, name: undefined, content: [new TextPart(plan)] }, user('Carry out the plan above.')]);
+  assert.equal(executing.body.thinking, undefined);
+  assert.equal(executing.body.messages[1].reasoning_content, undefined);
+  const executorCallId = executing.parts.find((part) => part.callId)?.callId;
+  const executorStep = await ask([user('Find it'), ...toolRound(executorCallId, [new TextPart(plan)])]);
+  assert.equal(executorStep.body.thinking, undefined);
+  assert.equal(executorStep.body.messages[1].reasoning_content, 'Need lookup');
+  assert.equal(executorStep.body.messages[1].content, plan);
+
   // A tool call without known reasoning (for example after a reload) turns thinking off instead of failing.
   const unknownHistory = await ask([user('Find it'), ...toolRound('call_from_before_reload')]);
   assert.deepEqual(unknownHistory.body.thinking, { type: 'disabled' });
@@ -251,11 +263,14 @@ try {
   await statusBar.refresh();
   assert.equal(window.statusItem.text, 'DeepSeek: $12.50');
   assert.equal(window.statusItem.visible, true);
+  assert.equal(statusBar.getExhaustedUntil(), undefined);
   statusBar.recordRequest({ model: 'deepseek-flash', inputTokens: 1_000, cachedInputTokens: 800, outputTokens: 50, costUsd: 0.0012 });
   assert.match(window.statusItem.tooltip, /Latest request \(deepseek-flash\): 1,000 input · 800 cached · 50 output · ~\$0\.0012/);
   balanceAvailable = false;
   await statusBar.refresh();
   assert.equal(window.statusItem.text, '$(warning) DeepSeek: $12.50');
+  assert(statusBar.getExhaustedUntil() > Date.now(), 'combos try DeepSeek last while the balance cannot pay');
+  assert.equal(statusBar.getExhaustedUntil(Date.now() + 16 * 60_000), undefined, 'an old balance check does not block');
   assert.match(window.statusItem.tooltip, /insufficient for API calls/);
   globalThis.__deepSeekSettings.balanceStatusBar = false;
   statusBar.recordRequest({ model: 'deepseek-flash', inputTokens: 1, cachedInputTokens: 0, outputTokens: 1 });
