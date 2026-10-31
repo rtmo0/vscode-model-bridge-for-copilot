@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.1
+
+### Combos
+
+- New **combo editor** (**Model Bridge: Combos: Open Combo Editor**, also in the Manage menu and offered when the Combos group is empty): add, rename, and delete combos, switch the strategy, and choose and order models from the lists of the signed-in providers, without editing `settings.json`. It warns about models that are not available now or lack tool calling, shows how each combo will appear in the model picker, validates before saving, and keeps unsaved work when the setting changes elsewhere.
+- A plan → execute combo can have several executors: `"executor": ["deepseek:deepseek-flash", "codex:gpt-5.5"]`. When one fails before answering, the next carries out the same plan; the planner takes over only after the last.
+- The README shows the combo editor, and the combos diagram shows executor chains.
+
 ## 1.5.0
 
 ### DeepSeek (new provider)

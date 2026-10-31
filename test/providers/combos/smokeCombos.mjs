@@ -29,12 +29,55 @@ const vscodeShim = {
         export const LanguageModelChatMessage={ User(text){ return { role: 1, name: undefined, content: [new LanguageModelTextPart(text)] }; } };
         export const LanguageModelChatToolMode={Auto:1,Required:2};
         export const QuickPickItemKind={Separator:-1};
-        export const commands={ async executeCommand(){} };
-        export const window={ messages: [], async showInformationMessage(message){ this.messages.push(message); return undefined; } };
-        export const workspace={
-          getConfiguration(section){ return { get(key,fallback){ const value = globalThis.__comboSettings[section + '.' + key]; return value === undefined ? fallback : value; } }; }
+        export const ConfigurationTarget={Global:1};
+        export const ViewColumn={Active:-1};
+        export class ThemeIcon { constructor(id){ this.id=id; } }
+        export class Uri {
+          constructor(path){ this.path=path; }
+          static joinPath(base,...parts){ return new Uri([base.path,...parts].join('/')); }
+          toString(){ return 'vscode-webview://test' + this.path; }
+        }
+        const configListeners = new Set();
+        const panelTest = globalThis.__comboPanel = { posted: [], executed: [], revealed: 0 };
+        export const commands={ async executeCommand(...args){ panelTest.executed.push(args); } };
+        export const window={
+          messages: [],
+          async showInformationMessage(message){ this.messages.push(message); return undefined; },
+          createWebviewPanel(viewType,title,column,options){
+            const panel = {
+              viewType, title, options, iconPath: undefined, visible: true,
+              webview: {
+                html: '',
+                cspSource: 'vscode-webview://test',
+                asWebviewUri(uri){ return uri.toString(); },
+                async postMessage(message){ panelTest.posted.push(message); return true; },
+                onDidReceiveMessage(callback){ panelTest.receive = callback; return { dispose(){} }; }
+              },
+              onDidDispose(callback){ panelTest.dispose = callback; return { dispose(){} }; },
+              reveal(){ panelTest.revealed += 1; }
+            };
+            panelTest.panel = panel;
+            return panel;
+          }
         };
-        globalThis.__comboVscode = { EventEmitter, CancellationError, LanguageModelTextPart, LanguageModelThinkingPart, LanguageModelToolCallPart, LanguageModelToolResultPart, LanguageModelDataPart, window };
+        export const workspace={
+          getConfiguration(section){ return {
+            get(key,fallback){ const value = globalThis.__comboSettings[section + '.' + key]; return value === undefined ? fallback : value; },
+            async update(key,value,target){
+              if (globalThis.__comboUpdateError) throw new Error(globalThis.__comboUpdateError);
+              panelTest.updates = (panelTest.updates ?? 0) + 1;
+              panelTest.lastTarget = target;
+              globalThis.__comboSettings[section + '.' + key] = value;
+              for (const listener of [...configListeners]) listener({ affectsConfiguration: (name) => name === section + '.' + key });
+            }
+          }; },
+          onDidChangeConfiguration(listener){ configListeners.add(listener); return { dispose(){ configListeners.delete(listener); } }; },
+          changeOutside(key, value){
+            globalThis.__comboSettings[key] = value;
+            for (const listener of [...configListeners]) listener({ affectsConfiguration: (name) => name === key });
+          }
+        };
+        globalThis.__comboVscode = { workspace, EventEmitter, CancellationError, LanguageModelTextPart, LanguageModelThinkingPart, LanguageModelToolCallPart, LanguageModelToolResultPart, LanguageModelDataPart, window };
       `,
       loader: 'js'
     }));
@@ -49,6 +92,7 @@ try {
         "export * from './src/providers/combos/routing';",
         "export * from './src/providers/combos/provider';",
         "export * from './src/providers/combos/planExecute';",
+        "export * from './src/providers/combos/comboEditorPanel';",
         "export { applyLoopGuard } from './src/loopGuard';",
         "export { createHttpError } from './src/providers/openaiCompatible/chatCompletions';",
         "export { toChatLimitError, ResponsesRateLimitedError, ResponsesQuotaExceededError } from './src/providers/codex/responsesLimitError';",
@@ -69,6 +113,7 @@ try {
     EventEmitter, CancellationError, LanguageModelTextPart: TextPart, LanguageModelThinkingPart: ThinkingPart,
     LanguageModelToolCallPart: ToolCallPart, LanguageModelToolResultPart: ToolResultPart, LanguageModelDataPart: DataPart, window
   } = globalThis.__comboVscode;
+  const panelTest = globalThis.__comboPanel;
 
   // Settings: invalid entries and targets are reported, valid ones still work.
   const parsed = module.parseCombos([
@@ -76,6 +121,7 @@ try {
     { name: 'Coding', targets: ['codex:gpt-5.5'] },
     { name: 'Cheap agent', strategy: 'planExecute', planner: 'claude:opus', executor: 'deepseek:deepseek-flash' },
     { name: 'Same', strategy: 'planExecute', planner: 'claude:opus', executor: 'Claude:opus' },
+    { name: 'Chain', strategy: 'planExecute', planner: 'claude:opus', executor: ['deepseek:deepseek-flash', 'claude:opus', 'codex:gpt-5.5', 'deepseek:deepseek-flash', 42] },
     { name: 'Half', strategy: 'planExecute', planner: 'claude:opus' },
     { name: 'Later', strategy: 'roundRobin', targets: ['claude:opus'] },
     { name: 'Empty', targets: [] },
@@ -93,16 +139,27 @@ try {
     name: 'Cheap agent',
     strategy: 'planExecute',
     planner: { provider: 'claude', model: 'opus', label: 'claude:opus' },
-    executor: { provider: 'deepseek', model: 'deepseek-flash', label: 'deepseek:deepseek-flash' }
+    executors: [{ provider: 'deepseek', model: 'deepseek-flash', label: 'deepseek:deepseek-flash' }]
+  }, {
+    name: 'Chain',
+    strategy: 'planExecute',
+    planner: { provider: 'claude', model: 'opus', label: 'claude:opus' },
+    executors: [
+      { provider: 'deepseek', model: 'deepseek-flash', label: 'deepseek:deepseek-flash' },
+      { provider: 'codex', model: 'gpt-5.5', label: 'codex:gpt-5.5' }
+    ]
   }], 'duplicates are dropped and the provider is case-insensitive');
-  assert.equal(parsed.invalid.length, 9);
-  assert.match(parsed.invalid.join('\n'), /Same \(the planner and the executor must be different models\)/);
-  assert.match(parsed.invalid.join('\n'), /Half \(planExecute needs a planner and an executor/);
+  assert.equal(parsed.invalid.length, 12);
+  assert.match(parsed.invalid.join('\n'), /Same: executor claude:opus \(the planner cannot also be an executor\)/);
+  assert.match(parsed.invalid.join('\n'), /Same \(planExecute needs a planner and at least one executor/);
+  assert.match(parsed.invalid.join('\n'), /Chain: executor claude:opus \(the planner cannot also be an executor\)/);
+  assert.match(parsed.invalid.join('\n'), /Chain: executor 42/);
+  assert.match(parsed.invalid.join('\n'), /Half \(planExecute needs a planner and at least one executor/);
   assert.match(parsed.invalid.join('\n'), /Later \(strategy "roundRobin" is not supported/);
   assert.match(parsed.invalid.join('\n'), /Coding: target "nope"/);
   assert.match(parsed.invalid.join('\n'), /Coding \(duplicate name\)/);
   assert.match(parsed.invalid.join('\n'), /Empty \(no valid targets\)/);
-  assert.match(parsed.invalid.join('\n'), /#8 \(needs a name\)/);
+  assert.match(parsed.invalid.join('\n'), /#9 \(needs a name\)/);
   assert.deepEqual(module.parseCombos(undefined), { combos: [], invalid: [] });
 
   // Target resolution: id, id without the provider prefix, OpenAI-Compatible endpoint/model, then name.
@@ -541,6 +598,146 @@ try {
   await executorOnly.provideLanguageModelChatResponse(alone, [user('Task W')], { tools }, { report: (part) => aloneParts.push(part) }, token);
   assert.deepEqual(describe(aloneParts), ['answer from deepseek-v4-pro']);
   executorOnly.dispose();
+
+  // Settings the editor writes are readable and resolve back to the same model.
+  const listed = [
+    ['claude', { id: 'anthropic::opus', name: 'Opus' }, 'claude:opus'],
+    ['codex', { id: 'codex::gpt-5.5', name: 'GPT-5.5' }, 'codex:gpt-5.5'],
+    ['deepseek', { id: 'deepseek-flash', name: 'DeepSeek Flash' }, 'deepseek:deepseek-flash'],
+    ['lmstudio', { id: 'lmstudio::qwen%2Fqwen3-30b', name: 'Qwen3 30B' }, 'lmstudio:qwen%2Fqwen3-30b'],
+    ['openaiCompatible', { id: 'oai::My%20Ollama::qwen3%3A8b', name: 'qwen3:8b' }, 'openaiCompatible:My Ollama/qwen3:8b'],
+    ['openaiCompatible', { id: 'oai::Router::vendor%2Fmodel-a', name: 'model-a' }, 'openaiCompatible:Router/vendor/model-a']
+  ];
+  for (const [providerId, model, expected] of listed) {
+    const setting = module.toTargetSetting(providerId, model.id);
+    assert.equal(setting, expected);
+    assert.equal(module.findTargetModel(module.parseTarget(setting), [{ id: 'other::x', name: 'x' }, model])?.id, model.id, `${setting} resolves back`);
+  }
+
+  // Plan → execute with an executor chain: the next executor takes over before the planner does.
+  globalThis.__comboSettings['modelBridge.combos'] = [
+    { name: 'Chain', strategy: 'planExecute', planner: 'claude:opus', executor: ['deepseek:deepseek-v4-pro', 'codex:gpt-5.5'] }
+  ];
+  now += 16 * 60_000;
+  const chain = new module.ComboModelProvider(registry, output, module.getComboConfig, () => now);
+  const [chained] = await chain.provideLanguageModelChatInformation({ silent: true }, token);
+  assert.equal(chained.detail, 'Plan: Opus → Execute: DeepSeek V4 Pro, GPT-5.5');
+  assert.match(chained.tooltip, /deepseek:deepseek-v4-pro, then codex:gpt-5\.5 carries it out/);
+  claude.next.push(async (report) => report(new TextPart('1. Go')));
+  deepseek.next.push(async () => { throw await rateLimit(); });
+  const chainParts = [];
+  await chain.provideLanguageModelChatResponse(chained, [user('Task X')], { tools }, { report: (part) => chainParts.push(part) }, token);
+  assert.deepEqual(describe(chainParts), ['**Plan · Opus**\n\n', '1. Go', '\n\n', 'answer from codex::gpt-5.5'], 'the plan is written once and the next executor carries it out');
+  assert.equal(codex.calls.at(-1).options.tools, tools);
+  assert.match(codex.calls.at(-1).messages.at(-1).content[0].value, /Carry out the plan above/);
+  const chainStatus = (await chain.getStatus()).statuses[0];
+  assert.deepEqual(chainStatus.targets.map((target) => target.role), ['planner', 'executor', 'executor']);
+  assert.equal(chainStatus.targets[1].cooldown.reason, 'rate-limit');
+  assert.equal(await chain.provideTokenCount(chained, 'abc', token), 3);
+
+  // The editor lists every model the providers offer now, as the strings it will write.
+  const choices = await chain.listModelChoices();
+  assert.deepEqual(choices.map((choice) => choice.value), ['claude:opus', 'codex:gpt-5.5', 'deepseek:deepseek-v4-pro']);
+  assert.deepEqual(choices[0], { provider: 'claude', value: 'claude:opus', name: 'Opus', toolCalling: true });
+  chain.dispose();
+
+  // Combo editor: the setting is converted for the editor and back.
+  assert.deepEqual(module.toEditableCombos([
+    { name: 'One', targets: ['claude:opus', 7] },
+    { name: 'Two', strategy: 'planExecute', planner: 'claude:opus', executor: 'deepseek:deepseek-flash' },
+    'junk'
+  ]), [
+    { name: 'One', strategy: 'fallback', targets: ['claude:opus'], planner: '', executors: [] },
+    { name: 'Two', strategy: 'planExecute', targets: [], planner: 'claude:opus', executors: ['deepseek:deepseek-flash'] }
+  ]);
+  assert.deepEqual(module.toSettingValue([
+    { name: ' One ', strategy: 'fallback', targets: ['claude:opus'], planner: 'ignored', executors: ['ignored'] },
+    { name: 'Two', strategy: 'planExecute', targets: ['ignored'], planner: 'claude:opus', executors: ['deepseek:deepseek-flash'] },
+    { name: 'Three', strategy: 'planExecute', targets: [], planner: 'claude:opus', executors: ['deepseek:deepseek-flash', 'codex:gpt-5.5'] }
+  ]), [
+    { name: 'One', strategy: 'fallback', targets: ['claude:opus'] },
+    { name: 'Two', strategy: 'planExecute', planner: 'claude:opus', executor: 'deepseek:deepseek-flash' },
+    { name: 'Three', strategy: 'planExecute', planner: 'claude:opus', executor: ['deepseek:deepseek-flash', 'codex:gpt-5.5'] }
+  ], 'one executor stays a plain string');
+  assert.equal(module.sanitizeEditableCombos('x'), undefined);
+  assert.equal(module.sanitizeEditableCombos([1]), undefined);
+  assert.equal(module.sanitizeEditableCombos(Array.from({ length: 51 }, () => ({}))), undefined, 'the list is bounded');
+  assert.deepEqual(module.sanitizeEditableCombos([{ name: 'x'.repeat(500), strategy: 'evil', targets: [' claude:opus ', '', 5] }])[0],
+    { name: 'x'.repeat(200), strategy: 'fallback', targets: ['claude:opus'], planner: '', executors: [] });
+
+  // Combo editor panel: own media only under a nonce CSP; it shows the setting and the listed models.
+  globalThis.__comboSettings['modelBridge.combos'] = [{ name: 'Coding', targets: ['claude:opus', 'lmstudio:gone'] }, { targets: [] }];
+  const editorHost = new module.ComboModelProvider(registry, output, module.getComboConfig, () => now);
+  module.ComboEditorPanel.show({ extensionUri: { path: '/ext' } }, editorHost);
+  const html = panelTest.panel.webview.html;
+  const nonce = /script-src 'nonce-([^']+)'/.exec(html)?.[1];
+  assert(nonce);
+  assert.match(html, /default-src 'none'/);
+  assert.match(html, new RegExp(`<script nonce="${nonce.replace(/[+/=]/g, '\\$&')}" src="vscode-webview://test/ext/media/comboEditor\.js">`));
+  assert.doesNotMatch(html, /unsafe-inline|unsafe-eval|https?:\/\//);
+  assert.deepEqual(panelTest.panel.options.localResourceRoots.map((uri) => uri.path), ['/ext/media']);
+  module.ComboEditorPanel.show({ extensionUri: { path: '/ext' } }, editorHost);
+  assert.equal(panelTest.revealed, 1, 'a second open reveals the same editor');
+
+  const send = async (message) => {
+    panelTest.receive(message);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  };
+  await send({ type: 'ready' });
+  const state = panelTest.posted.at(-1);
+  assert.equal(state.type, 'state');
+  assert.equal(state.external, false);
+  assert.deepEqual(state.combos.map((combo) => combo.name), ['Coding', ''], 'an entry without a name is shown so it can be fixed, not dropped on save');
+  assert.deepEqual(state.combos[0].targets, ['claude:opus', 'lmstudio:gone'], 'unresolved targets stay visible so they can be fixed');
+  assert.deepEqual(state.invalid, ['#2 (needs a name)']);
+  assert.deepEqual(state.models.map((model) => model.value), ['claude:opus', 'codex:gpt-5.5', 'deepseek:deepseek-v4-pro']);
+
+  // Saving validates with the provider's parser and writes user settings.
+  await send({ type: 'save', combos: [{ name: '', strategy: 'fallback', targets: ['claude:opus'] }] });
+  assert.deepEqual(panelTest.posted.at(-1), { type: 'saved', ok: false, errors: ['#1 (needs a name)'] });
+  await send({ type: 'save', combos: [{ name: 'Same', strategy: 'planExecute', planner: 'claude:opus', executors: ['claude:opus'] }] });
+  assert.equal(panelTest.posted.at(-1).ok, false);
+  assert.equal(panelTest.updates, undefined, 'nothing is written while invalid');
+  await send({ type: 'save', combos: 'not a list' });
+  assert.deepEqual(panelTest.posted.at(-1), { type: 'saved', ok: false, errors: ['The editor sent an invalid list.'] });
+  await send({ type: 'save', combos: [
+    { name: 'Coding', strategy: 'fallback', targets: ['claude:opus', 'codex:gpt-5.5'] },
+    { name: 'Agent', strategy: 'planExecute', planner: 'claude:opus', executors: ['deepseek:deepseek-v4-pro', 'codex:gpt-5.5'] }
+  ] });
+  assert.equal(panelTest.updates, 1);
+  assert.equal(panelTest.lastTarget, 1, 'combos are written to user settings');
+  assert.deepEqual(globalThis.__comboSettings['modelBridge.combos'], [
+    { name: 'Coding', strategy: 'fallback', targets: ['claude:opus', 'codex:gpt-5.5'] },
+    { name: 'Agent', strategy: 'planExecute', planner: 'claude:opus', executor: ['deepseek:deepseek-v4-pro', 'codex:gpt-5.5'] }
+  ]);
+  const savedIndex = panelTest.posted.findIndex((message) => message.type === 'saved' && message.ok);
+  assert(savedIndex >= 0);
+  assert.equal(panelTest.posted.slice(savedIndex + 1).find((message) => message.type === 'state')?.combos.length, 2, 'the saved combos are sent back');
+  assert(!panelTest.posted.slice(0, savedIndex).some((message) => message.type === 'state' && message.external), 'its own save is not reported as an outside change');
+  const [savedAgent] = (await editorHost.provideLanguageModelChatInformation({ silent: true }, token)).filter((model) => model.name === 'Agent');
+  assert.equal(savedAgent.detail, 'Plan: Opus → Execute: DeepSeek V4 Pro, GPT-5.5', 'the picker shows what the editor saved');
+
+  globalThis.__comboUpdateError = 'Unable to write to User Settings';
+  await send({ type: 'save', combos: [{ name: 'Coding', strategy: 'fallback', targets: ['claude:opus'] }] });
+  assert.deepEqual(panelTest.posted.at(-1), { type: 'saved', ok: false, errors: ['Unable to write to User Settings'] });
+  delete globalThis.__comboUpdateError;
+
+  // An outside change is reported, so the editor can keep unsaved work.
+  globalThis.__comboVscode.workspace.changeOutside('modelBridge.combos', []);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(panelTest.posted.at(-1).external, true);
+  await send({ type: 'doctor' });
+  await send({ type: 'openSettingsJson' });
+  assert.deepEqual(panelTest.executed.slice(-2).map(([command]) => command), ['modelBridge.combos.doctor', 'workbench.action.openSettingsJson']);
+  const postedBefore = panelTest.posted.length;
+  await send({ type: 'unknown' });
+  await send(null);
+  assert.equal(panelTest.posted.length, postedBefore, 'unknown messages are ignored');
+  panelTest.dispose();
+  module.ComboEditorPanel.show({ extensionUri: { path: '/ext' } }, editorHost);
+  assert.equal(panelTest.revealed, 1, 'a closed editor opens anew');
+  panelTest.dispose();
+  editorHost.dispose();
 
   // Without combos, the person is pointed at the setting.
   globalThis.__comboSettings['modelBridge.combos'] = [];

@@ -2,7 +2,7 @@
   "name": "model-bridge-for-copilot",
   "displayName": "Model Bridge for Copilot - Claude, Codex & Local LLMs",
   "description": "Use Claude subscriptions, ChatGPT Codex, DeepSeek, LM Studio, Ollama, llama.cpp, vLLM, and other OpenAI-compatible models in native VS Code Chat and Agent mode, on their own or as fallback and plan → execute combos.",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "publisher": "samarin-aa-aka-rtm00",
   "icon": "assets/model-bridge-for-copilot.png",
   "license": "MIT",
@@ -504,6 +504,11 @@
         "category": "Model Bridge: Combos"
       },
       {
+        "command": "modelBridge.combos.openEditor",
+        "title": "Open Combo Editor",
+        "category": "Model Bridge: Combos"
+      },
+      {
         "command": "modelBridge.combos.doctor",
         "title": "Run Doctor",
         "category": "Model Bridge: Combos"
@@ -515,7 +520,7 @@
       },
       {
         "command": "modelBridge.combos.openSettings",
-        "title": "Edit Combos",
+        "title": "Edit Combos as JSON",
         "category": "Model Bridge: Combos"
       },
       {
@@ -1178,7 +1183,7 @@
           "type": "array",
           "scope": "application",
           "default": [],
-          "markdownDescription": "Models in the **Combos** picker group that route each request to other Model Bridge providers. Targets are `provider:model`, with provider `claude`, `codex`, `deepseek`, `lmstudio`, or `openaiCompatible`; the model matches a model id or name, for example `claude:opus`, `codex:gpt-5.5`, or `openaiCompatible:Ollama/qwen3`.\n\n- `fallback` tries its `targets` in order: a conversation stays on one target and moves to the next only when it fails before answering (rate limit, exhausted quota or balance, server or network error, sign-in problem). A failed target cools down for 60 s, doubling up to 15 min.\n- `planExecute`: the `planner` writes a short plan for each new prompt and the `executor` carries it out with the tools; the planner is asked again, once per turn, when the executor looks stuck.\n\nSwitching models breaks the prompt cache, so it stays rare. Run **Model Bridge: Combos: Run Doctor** to check combos.",
+          "markdownDescription": "Models in the **Combos** picker group that route each request to other Model Bridge providers. Targets are `provider:model`, with provider `claude`, `codex`, `deepseek`, `lmstudio`, or `openaiCompatible`; the model matches a model id or name, for example `claude:opus`, `codex:gpt-5.5`, or `openaiCompatible:Ollama/qwen3`.\n\n- `fallback` tries its `targets` in order: a conversation stays on one target and moves to the next only when it fails before answering (rate limit, exhausted quota or balance, server or network error, sign-in problem). A failed target cools down for 60 s, doubling up to 15 min.\n- `planExecute`: the `planner` writes a short plan for each new prompt and the `executor` (one model, or several tried in order) carries it out with the tools; the planner is asked again, once per turn, when the executor looks stuck.\n\nSwitching models breaks the prompt cache, so it stays rare. Edit combos visually with **Model Bridge: Combos: Open Combo Editor**, and check them with **Run Doctor**.",
           "items": {
             "type": "object",
             "required": [
@@ -1218,10 +1223,23 @@
                 "description": "planExecute: the model that writes the plan, without tools, as provider:model."
               },
               "executor": {
-                "type": "string",
-                "pattern": "^\\s*(?:claude|codex|deepseek|lmstudio|openaiCompatible)\\s*:.+$",
-                "patternErrorMessage": "Use provider:model, with provider claude, codex, deepseek, lmstudio, or openaiCompatible.",
-                "description": "planExecute: the model that carries out the plan with the tools, as provider:model. When it fails before answering, the planner takes over."
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^\\s*(?:claude|codex|deepseek|lmstudio|openaiCompatible)\\s*:.+$",
+                    "patternErrorMessage": "Use provider:model, with provider claude, codex, deepseek, lmstudio, or openaiCompatible."
+                  },
+                  {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string",
+                      "pattern": "^\\s*(?:claude|codex|deepseek|lmstudio|openaiCompatible)\\s*:.+$",
+                      "patternErrorMessage": "Use provider:model, with provider claude, codex, deepseek, lmstudio, or openaiCompatible."
+                    }
+                  }
+                ],
+                "description": "planExecute: the model, or models in order, that carry out the plan with the tools, as provider:model. The next executor takes over when one fails before answering, and the planner after the last."
               }
             }
           }

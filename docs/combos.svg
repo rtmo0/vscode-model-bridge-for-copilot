@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 390" width="920" height="390" role="img" aria-labelledby="title desc">
   <title id="title">How combos route requests</title>
-  <desc id="desc">A fallback combo tries its models in order. When Claude Opus is rate limited before answering, it cools down for 60 seconds and Codex answers; the conversation then stays on Codex, and DeepSeek is used only if Codex fails too. A plan → execute combo uses two models in one response: the planner writes a short plan without tools for each new prompt, the executor carries it out and runs every tool step, and when the executor looks stuck the planner writes a revised plan once per turn.</desc>
+  <desc id="desc">A fallback combo tries its models in order. When Claude Opus is rate limited before answering, it cools down for 60 seconds and Codex answers; the conversation then stays on Codex, and DeepSeek is used only if Codex fails too. A plan → execute combo uses two models in one response: the planner writes a short plan without tools for each new prompt, the first executor carries it out and runs every tool step, the next executor takes over when one fails, and when the executor looks stuck the planner writes a revised plan once per turn.</desc>
   <defs>
     <style>
       .bg { fill: #f6f8fa; }
@@ -72,17 +72,17 @@
   <!-- Plan → execute -->
   <rect class="card" x="468" y="56" width="428" height="290" rx="12"/>
   <text class="title" x="484" y="82">Plan → execute</text>
-  <text class="note" x="484" y="101">two models in one response</text>
+  <text class="note" x="484" y="101">a planner and its executors in one response</text>
 
   <rect class="step" x="484" y="118" width="344" height="48" rx="10"/>
-  <text class="text" x="500" y="138">Planner · claude:opus</text>
+  <text class="text" x="500" y="138">Planner · Claude Opus</text>
   <text class="note" x="500" y="155">each new prompt → a short plan, no tools</text>
 
   <path class="arrow" d="M656 166V180" marker-end="url(#tip)"/>
 
   <rect class="cloud" x="484" y="182" width="344" height="48" rx="10"/>
-  <text class="text" x="500" y="202">Executor · deepseek:deepseek-flash</text>
-  <text class="note" x="500" y="219">carries out the plan · every tool step</text>
+  <text class="text" x="500" y="202">Executors · DeepSeek Flash, then GPT-5.5</text>
+  <text class="note" x="500" y="219">carry out the plan · the next takes over on failure</text>
 
   <path class="arrow" d="M656 230V244" marker-end="url(#tip)"/>
 
@@ -95,5 +95,5 @@
   <text class="note" x="484" y="318">The plan stays in the conversation,</text>
   <text class="note" x="484" y="334">so the executor's prompt cache keeps working.</text>
 
-  <text class="note" x="24" y="374">Targets are provider:model from the other groups. Each model records its own usage; switching models starts a new prompt cache.</text>
+  <text class="note" x="24" y="374">Set up combos in the combo editor or as provider:model in settings. Each model records its own usage; switching models starts a new prompt cache.</text>
 </svg>

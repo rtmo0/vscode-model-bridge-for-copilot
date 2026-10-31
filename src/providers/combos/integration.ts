@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { showDoctorReport, showManagementMenu } from '../managementMenu';
 import { formatTokenCount } from '../openaiCompatible/chatCompletions';
 import type { ProviderRegistry } from '../registry';
+import { ComboEditorPanel } from './comboEditorPanel';
 import { ComboModelProvider, COMBOS_SETTING } from './provider';
 
 export function activateCombos(context: vscode.ExtensionContext, registry: ProviderRegistry): ComboModelProvider {
@@ -15,6 +16,7 @@ export function activateCombos(context: vscode.ExtensionContext, registry: Provi
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration(COMBOS_SETTING)) provider.refresh();
     }),
+    vscode.commands.registerCommand('modelBridge.combos.openEditor', () => ComboEditorPanel.show(context, provider)),
     vscode.commands.registerCommand('modelBridge.combos.openLogs', () => output.show(true)),
     vscode.commands.registerCommand('modelBridge.combos.openSettings', () => (
       vscode.commands.executeCommand('workbench.action.openSettings', COMBOS_SETTING)
@@ -26,7 +28,8 @@ export function activateCombos(context: vscode.ExtensionContext, registry: Provi
     vscode.commands.registerCommand('modelBridge.combos.doctor', () => runDoctor(provider)),
     vscode.commands.registerCommand('modelBridge.combos.manage', () => showManagementMenu('Model Bridge: Combos', [
       { label: 'Combos', actions: [
-        { icon: 'edit', label: 'Edit Combos', description: COMBOS_SETTING, command: 'modelBridge.combos.openSettings' },
+        { icon: 'layers', label: 'Open Combo Editor', description: 'add, change, and order combos', command: 'modelBridge.combos.openEditor' },
+        { icon: 'json', label: 'Edit Combos as JSON', description: COMBOS_SETTING, command: 'modelBridge.combos.openSettings' },
         { icon: 'refresh', label: 'Refresh Models', command: 'modelBridge.combos.refreshModels' }
       ] },
       { label: 'Diagnostics', actions: [
@@ -66,19 +69,20 @@ async function runDoctor(provider: ComboModelProvider): Promise<void> {
       lines.push('Not shown in the model picker: no target is available.');
     }
     if (status.strategy === 'planExecute' && status.targets.some((target) => target.role === 'planner' && target.problem)) {
-      lines.push('Without its planner the combo runs the executor alone.');
+      lines.push('Without its planner the combo runs the executors alone.');
     }
   }
   if (statuses.length === 0 && invalid.length === 0) {
     lines.push(`Add combos to ${COMBOS_SETTING}, for example { "name": "Coding", "targets": ["claude:opus", "codex:gpt-5.5"] }`
-      + ' or { "name": "Cheap agent", "strategy": "planExecute", "planner": "claude:opus", "executor": "deepseek:deepseek-flash" }.');
+      + ' or { "name": "Cheap agent", "strategy": "planExecute", "planner": "claude:opus", "executor": ["deepseek:deepseek-flash", "codex:gpt-5.5"] },'
+      + ' or use Model Bridge: Combos: Open Combo Editor.');
   }
   lines.push('', statuses.length > 0 && statuses.every((status) => status.available && status.targets.every((target) => !target.problem))
     ? 'Result: ready'
     : 'Result: needs attention');
   await showDoctorReport(lines, {
     logsCommand: 'modelBridge.combos.openLogs',
-    extraActions: [{ label: 'Edit Combos', command: 'modelBridge.combos.openSettings' }]
+    extraActions: [{ label: 'Open Combo Editor', command: 'modelBridge.combos.openEditor' }]
   });
 }
 

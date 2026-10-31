@@ -10,6 +10,7 @@ import {
   comboTargets,
   findTargetModel,
   parseCombos,
+  toTargetSetting,
   type Combo,
   type ComboTarget,
   type FailureReason,
@@ -45,6 +46,16 @@ export interface ComboTargetStatus {
   cooldown?: { remainingMs: number; reason: FailureReason };
   /** Out of quota according to the provider's own account status. */
   exhaustedForMs?: number;
+}
+
+/** A model the editor can offer as a target. */
+export interface ComboModelChoice {
+  provider: ProviderId;
+  /** The `provider:model` string written to the setting. */
+  value: string;
+  name: string;
+  detail?: string;
+  toolCalling: boolean;
 }
 
 export interface ComboStatus {
@@ -117,9 +128,9 @@ export class ComboModelProvider implements vscode.LanguageModelChatProvider, vsc
       if (!options.silent) {
         // Not awaited: the model list must not wait for the notification to be dismissed.
         void vscode.window.showInformationMessage(
-          `No combos are configured. Add them to ${COMBOS_SETTING}, for example a fallback from Claude to Codex.`,
-          'Open Settings'
-        ).then((action) => action ? vscode.commands.executeCommand('modelBridge.combos.openSettings') : undefined);
+          'No combos are configured. Create one in the combo editor, for example a fallback from Claude to Codex.',
+          'Open Combo Editor'
+        ).then((action) => action ? vscode.commands.executeCommand('modelBridge.combos.openEditor') : undefined);
       }
       return [];
     }
@@ -134,7 +145,7 @@ export class ComboModelProvider implements vscode.LanguageModelChatProvider, vsc
         tooltip: describeCombo(combo),
         detail: combo.strategy === 'fallback'
           ? targets.map((entry) => entry.info.name).join(' → ')
-          : targets.map((entry) => `${entry.target === combo.planner ? 'Plan' : 'Execute'}: ${entry.info.name}`).join(' → '),
+          : describeRoles(combo, targets),
         maxInputTokens: window.maxInputTokens,
         maxOutputTokens: window.maxOutputTokens,
         capabilities: { toolCalling: window.toolCalling, imageInput: window.imageInput }
@@ -158,10 +169,9 @@ export class ComboModelProvider implements vscode.LanguageModelChatProvider, vsc
       return this.runTargets(request, targets, messages);
     }
 
-    // The executor does the work; when it fails before answering, the planner takes over as in a fallback.
-    const executor = targets.find((entry) => entry.target === combo.executor);
+    // The executors do the work in order; when every one fails before answering, the planner takes over.
     const planner = targets.find((entry) => entry.target === combo.planner);
-    const candidates = [executor, planner].filter((entry): entry is ResolvedTarget => entry !== undefined);
+    const candidates = [...targets.filter((entry) => entry.target !== combo.planner), ...(planner ? [planner] : [])];
     const phase: PlanPhase | undefined = isNewPrompt(messages) ? 'plan' : undefined;
     const event = phase ? undefined : escalationEvent(messages);
     const plannerFirst = this.order(request, candidates)[0] === planner?.target.label;
@@ -179,13 +189,28 @@ export class ComboModelProvider implements vscode.LanguageModelChatProvider, vsc
   ): Promise<number> {
     const { combo, targets } = await this.resolveByModelId(model.id);
     const first = combo.strategy === 'planExecute'
-      ? targets.find((entry) => entry.target === combo.executor) ?? targets[0]
+      ? targets.find((entry) => entry.target !== combo.planner) ?? targets[0]
       : targets[0];
     if (first) return first.provider.provideTokenCount(first.info, value, token);
     const text = typeof value === 'string'
       ? value
       : value.content.map((part) => part instanceof vscode.LanguageModelTextPart ? part.value : '').join('');
     return Math.ceil(text.length / 4);
+  }
+
+  /** Every model the active providers list now, for the combo editor; listed fresh and silently. */
+  async listModelChoices(): Promise<ComboModelChoice[]> {
+    this.modelLists.clear();
+    const lists = await Promise.all([...this.registry].map(async ([id, { provider }]) => (
+      (await this.listModels(id, provider)).map((info): ComboModelChoice => ({
+        provider: id,
+        value: toTargetSetting(id, info.id),
+        name: info.name,
+        ...(info.detail ? { detail: info.detail } : {}),
+        toolCalling: Boolean(info.capabilities?.toolCalling)
+      }))
+    )));
+    return lists.flat();
   }
 
   /** Configured combos with what each target resolves to, for the Doctor. */
@@ -462,7 +487,16 @@ export function conversationKey(messages: readonly vscode.LanguageModelChatReque
 function describeCombo(combo: Combo): string {
   return combo.strategy === 'fallback'
     ? `Fallback combo: ${combo.targets.map((target) => target.label).join(' → ')}. A conversation stays on one model and moves to the next only when it fails before answering.`
-    : `Plan → execute combo: ${combo.planner.label} writes a short plan for each new prompt and ${combo.executor.label} carries it out with the tools. The planner is asked again, once per turn, when the executor looks stuck.`;
+    : `Plan → execute combo: ${combo.planner.label} writes a short plan for each new prompt and ${combo.executors.map((target) => target.label).join(', then ')} carries it out with the tools. The planner is asked again, once per turn, when the executor looks stuck.`;
+}
+
+function describeRoles(combo: Combo, targets: readonly ResolvedTarget[]): string {
+  if (combo.strategy !== 'planExecute') return targets.map((entry) => entry.info.name).join(' → ');
+  const planner = targets.find((entry) => entry.target === combo.planner);
+  const executors = targets.filter((entry) => entry.target !== combo.planner).map((entry) => entry.info.name);
+  return [planner ? `Plan: ${planner.info.name}` : '', executors.length > 0 ? `Execute: ${executors.join(', ')}` : '']
+    .filter(Boolean)
+    .join(' → ');
 }
 
 function forTarget(

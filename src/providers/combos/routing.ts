@@ -19,12 +19,15 @@ export interface FallbackCombo {
   targets: ComboTarget[];
 }
 
-/** The planner writes a short plan for each new prompt; the executor does the tool steps. */
+/**
+ * The planner writes a short plan for each new prompt; the first available executor does the tool steps, and the
+ * others take over in order when it fails before answering.
+ */
 export interface PlanExecuteCombo {
   name: string;
   strategy: 'planExecute';
   planner: ComboTarget;
-  executor: ComboTarget;
+  executors: ComboTarget[];
 }
 
 export type Combo = FallbackCombo | PlanExecuteCombo;
@@ -54,13 +57,23 @@ export function parseCombos(value: unknown): ParsedCombos {
       invalid.push(`${name} (duplicate name)`);
     } else if (strategy === 'planExecute') {
       const planner = typeof entry.planner === 'string' ? parseTarget(entry.planner) : undefined;
-      const executor = typeof entry.executor === 'string' ? parseTarget(entry.executor) : undefined;
-      if (!planner || !executor) {
-        invalid.push(`${name} (planExecute needs a planner and an executor as provider:model)`);
-      } else if (planner.label === executor.label) {
-        invalid.push(`${name} (the planner and the executor must be different models)`);
+      // One executor as a string, or several in order.
+      const rawExecutors = Array.isArray(entry.executor) ? entry.executor : entry.executor === undefined ? [] : [entry.executor];
+      const executors: ComboTarget[] = [];
+      for (const raw of rawExecutors) {
+        const executor = typeof raw === 'string' ? parseTarget(raw) : undefined;
+        if (!executor) {
+          invalid.push(`${name}: executor ${JSON.stringify(raw)} (use provider:model, provider one of ${PROVIDER_IDS.join(', ')})`);
+        } else if (executor.label === planner?.label) {
+          invalid.push(`${name}: executor ${executor.label} (the planner cannot also be an executor)`);
+        } else if (!executors.some((existing) => existing.label === executor.label)) {
+          executors.push(executor);
+        }
+      }
+      if (!planner || executors.length === 0) {
+        invalid.push(`${name} (planExecute needs a planner and at least one executor as provider:model)`);
       } else {
-        combos.push({ name, strategy, planner, executor });
+        combos.push({ name, strategy, planner, executors });
       }
     } else if (strategy !== 'fallback') {
       invalid.push(`${name} (strategy ${JSON.stringify(strategy)} is not supported; use "fallback" or "planExecute")`);
@@ -86,7 +99,16 @@ export function parseCombos(value: unknown): ParsedCombos {
 
 /** Every target of a combo; a plan → execute combo lists the planner first. */
 export function comboTargets(combo: Combo): ComboTarget[] {
-  return combo.strategy === 'fallback' ? combo.targets : [combo.planner, combo.executor];
+  return combo.strategy === 'fallback' ? combo.targets : [combo.planner, ...combo.executors];
+}
+
+/** The `provider:model` a setting should hold for a listed model: readable, and matched back by `findTargetModel`. */
+export function toTargetSetting(provider: ProviderId, modelId: string): string {
+  const parts = modelId.split('::');
+  if (provider === 'openaiCompatible' && parts.length === 3) {
+    return `${provider}:${safeDecode(parts[1])}/${safeDecode(parts[2])}`;
+  }
+  return `${provider}:${parts.length > 1 ? parts.slice(1).join('::') : modelId}`;
 }
 
 export function parseTarget(value: string): ComboTarget | undefined {

@@ -1,6 +1,6 @@
 # Model Bridge for Copilot — обзор проекта
 
-Состояние на версию **1.5.0** (октябрь 2026). Документ описывает назначение, архитектуру, провайдеры, инфраструктуру и предлагаемые доработки.
+Состояние на версию **1.5.1** (октябрь 2026). Документ описывает назначение, архитектуру, провайдеры, инфраструктуру и предлагаемые доработки.
 
 ---
 
@@ -179,11 +179,12 @@ src/
 
 ## 5c. Combos
 
-Файлы: [src/providers/combos/](../src/providers/combos/) — `provider.ts`, `routing.ts` (без импортов VS Code), `planExecute.ts`, `integration.ts`. Настройка `modelBridge.combos` (application scope).
+Файлы: [src/providers/combos/](../src/providers/combos/) — `provider.ts`, `routing.ts` (без импортов VS Code), `planExecute.ts`, `comboEditorPanel.ts` (визуальный редактор, webview с [media/comboEditor.js](../media/comboEditor.js)), `integration.ts`. Настройка `modelBridge.combos` (application scope); редактор читает и пишет именно её.
 
 - **Вызов цели**: напрямую `provideLanguageModelChatResponse` провайдера из реестра с его собственным `LanguageModelChatInformation`, без `vscode.lm`. Usage записывает сам целевой провайдер; Combos логируют только решения о маршрутизации.
 - **Fallback**: цели по порядку; переход к следующей только при ошибке **до** первой части ответа (лимиты, квота, 5xx, сеть, таймаут, авторизация). Cooldown 60 с с удвоением до 15 мин или по `Retry-After`. Разговор закреплён за ответившей целью (LRU на 256 ключей, хеш первого сообщения в памяти). Исчерпанные по статус-бару и остывающие цели пробуются последними.
-- **Plan → execute**: на новый промпт планировщик без инструментов пишет план (стримится под заголовком **Plan**), затем в том же запросе исполнитель работает с инструментами. Шаги инструментов — только исполнителю. При redirect-событии loop guard (даже при выключенной настройке) — один пересмотренный план за ход. Без планировщика исполнитель работает один; если исполнитель упал до ответа, ход доделывает планировщик.
+- **Plan → execute**: на новый промпт планировщик без инструментов пишет план (стримится под заголовком **Plan**), затем в том же запросе первый доступный исполнитель работает с инструментами. Исполнителей может быть несколько: если один упал до ответа, план выполняет следующий, а планировщик — только после последнего. Шаги инструментов — только исполнителю. При redirect-событии loop guard (даже при выключенной настройке) — один пересмотренный план за ход. Без планировщика исполнители работают одни.
+- **Редактор** (**Combos: Open Combo Editor**): добавление, удаление и порядок комбо и моделей из списков активных провайдеров, предупреждения о недоступных моделях и моделях без tool calling, валидация тем же `parseCombos` перед записью в пользовательские настройки.
 - **Возможности** комбо — пересечение возможностей целей, окно — минимум.
 
 ---
@@ -211,7 +212,7 @@ src/
 | LM Studio | Manage, Doctor, Refresh Models, Set/Clear API Token, Open Settings/Documentation/Logs, Test Connection |
 | OpenAI-Compatible | Manage, Add/Remove Endpoint, Set/Clear API Token, Refresh Models, Test Connection, Doctor, Open Settings/Logs |
 | DeepSeek | Manage, Set/Clear API Key, Show Balance, Open Platform, Refresh Models, Test Connection, Doctor, Open Documentation/Logs/Settings |
-| Combos | Manage, Run Doctor, Refresh Models, Edit Combos, Open Logs |
+| Combos | Manage, Open Combo Editor, Run Doctor, Refresh Models, Edit Combos as JSON, Open Logs |
 
 ---
 
@@ -229,7 +230,7 @@ src/
 
 **DeepSeek** (`modelBridge.deepseek.*`): `baseURL` (machine scope), `maxOutputTokens` (65 536), `temperature` (0.2), `requestTimeoutSeconds` (600), `balanceStatusBar`.
 
-**Combos**: `modelBridge.combos` ([]): `{ name, strategy: "fallback", targets }` или `{ name, strategy: "planExecute", planner, executor }`, цели в виде `provider:model`.
+**Combos**: `modelBridge.combos` ([]): `{ name, strategy: "fallback", targets }` или `{ name, strategy: "planExecute", planner, executor }`, где `executor` — строка или список; цели в виде `provider:model`.
 
 **Loop guard** (`modelBridge.loopGuard.*`): `enabled` (false), `sensitivity` (`default`).
 

@@ -143,6 +143,7 @@ Useful commands:
 - `Model Bridge: OpenAI-Compatible: Add Endpoint`
 - `Model Bridge: OpenAI-Compatible: Run Doctor`
 - `Model Bridge: OpenAI-Compatible: Test Connection`
+- `Model Bridge: Combos: Open Combo Editor`
 - `Model Bridge: Combos: Run Doctor`
 
 Provider settings live under **Settings → Extensions → Model Bridge** and use these sections:
@@ -215,19 +216,27 @@ The guard keeps no data: each request recomputes it from the conversation, so th
 
 A combo is a model in the **Combos** group of the model picker that sends each request to the other Model Bridge providers.
 
-![How combos route requests: a fallback combo tries Claude Opus, which is rate limited and cools down, then Codex, which answers and keeps the conversation, with DeepSeek on standby; a plan → execute combo lets Claude Opus write a short plan without tools, DeepSeek Flash carry it out with every tool step, and the planner write a revised plan once per turn when the executor is stuck](docs/combos.png)
+![How combos route requests: a fallback combo tries Claude Opus, which is rate limited and cools down, then Codex, which answers and keeps the conversation, with DeepSeek on standby; a plan → execute combo lets Claude Opus write a short plan without tools, DeepSeek Flash carry it out with every tool step with GPT-5.5 as the next executor, and the planner write a revised plan once per turn when the executor is stuck](docs/combos.png)
 
-Define combos in `modelBridge.combos`:
+#### Set up combos
+
+Run **Model Bridge: Combos: Open Combo Editor** (also in **Model Bridge: Manage Providers → Combos**, and offered when the Combos group is empty). Add a fallback or a plan → execute combo, name it, and choose its models from the lists of the providers that are signed in; arrows change the order. The editor warns about a model that is not available now or that lacks tool calling, shows how the combo will appear in the model picker, and saves to your user settings.
+
+![The combo editor: a fallback combo named Coding with Opus, GPT-5.5, and DeepSeek V4 Pro in order, and a plan → execute combo named Cheap agent with Opus as the planner and DeepSeek Flash, then GPT-5.5, as executors](docs/combo-editor.png)
+
+The same combos can be written in `modelBridge.combos` (**Edit as JSON** in the editor):
 
 ```json
 "modelBridge.combos": [
   { "name": "Coding", "strategy": "fallback", "targets": ["claude:opus", "codex:gpt-5.5", "deepseek:deepseek-v4-pro"] },
   { "name": "Local first", "targets": ["openaiCompatible:Ollama/qwen3:30b", "lmstudio:qwen/qwen3-30b-a3b"] },
-  { "name": "Cheap agent", "strategy": "planExecute", "planner": "claude:opus", "executor": "deepseek:deepseek-flash" }
+  { "name": "Cheap agent", "strategy": "planExecute", "planner": "claude:opus", "executor": ["deepseek:deepseek-flash", "codex:gpt-5.5"] }
 ]
 ```
 
-Each target is `provider:model`, with provider `claude`, `codex`, `deepseek`, `lmstudio`, or `openaiCompatible`. The model is a model id from that provider's group (the `anthropic::`, `codex::`, or `lmstudio::` prefix is optional) or its name as shown in the picker; OpenAI-Compatible models can also be written `<endpoint name>/<model>`.
+Each model is `provider:model`, with provider `claude`, `codex`, `deepseek`, `lmstudio`, or `openaiCompatible`. The model is a model id from that provider's group (the `anthropic::`, `codex::`, or `lmstudio::` prefix is optional) or its name as shown in the picker; OpenAI-Compatible models can also be written `<endpoint name>/<model>`.
+
+#### Fallback
 
 A `fallback` combo tries its targets in order:
 
@@ -236,16 +245,18 @@ A `fallback` combo tries its targets in order:
 - Errors that every target would hit, such as a conversation that exceeds the context window, are not retried.
 - The combo offers tool calling and image input only when every target supports them, and its context window is the smallest of its targets, so a fallback never overflows a smaller model.
 
-A `planExecute` combo uses an expensive model for judgment and a cheaper one for the many tool steps of an agent turn:
+#### Plan → execute
+
+A `planExecute` combo uses an expensive model for judgment and cheaper ones for the many tool steps of an agent turn. `executor` is one model or a list tried in order:
 
 1. For each new prompt, the `planner` gets the conversation without tools and writes a short numbered plan. It is shown at the start of the response under **Plan**, so it becomes part of the conversation.
-2. In the same request, the `executor` carries out the plan with the tools. Every later tool step of the turn goes to the executor only, and the plan stays where it is in the history, so the executor's prompt cache keeps working.
+2. In the same request, the first available executor carries out the plan with the tools. Every later tool step of the turn goes to that executor only, and the plan stays where it is in the history, so the executor's prompt cache keeps working.
 3. When the executor looks stuck — the [loop guard](#loop-guard) heuristic, which combos run even when `modelBridge.loopGuard.enabled` is off — the planner writes a **Revised plan** from what was tried, once per turn, and the executor continues with it.
-4. If the planner fails, the executor continues without a plan. If the executor fails before answering, the planner carries out the turn itself with the tools, and the conversation stays on it.
+4. If an executor fails before answering (limit, quota, outage), the next executor takes over with the same plan, and the conversation stays on it; the planner carries out the turn itself only when every executor fails. If the planner fails, the executors continue without a plan.
 
 The planner's thinking and token usage do not appear in the response; its usage is recorded under its own model in the usage report.
 
-Switching models starts a new prompt cache and ends Claude and Codex continuation for that conversation, so a fallback costs one full-price request; the conversation then stays on its new target. A plan likewise starts a new Claude Code session for the step after it when `modelBridge.claude.sessionContinuation` is on. Usage is recorded under the target that answered, so the usage report and status bars stay correct. Each target uses its own default settings (effort, context size, temperature). **Model Bridge: Combos: Run Doctor** shows what every target resolves to, which ones are cooling down, and entries that were skipped as invalid.
+Switching models starts a new prompt cache and ends Claude and Codex continuation for that conversation, so a fallback costs one full-price request; the conversation then stays on its new target. A plan likewise starts a new Claude Code session for the step after it when `modelBridge.claude.sessionContinuation` is on. Usage is recorded under the target that answered, so the usage report and status bars stay correct. Each target uses its own default settings (effort, context size, temperature). **Model Bridge: Combos: Run Doctor** shows what every model resolves to, which ones are cooling down or out of quota, and entries that were skipped as invalid.
 
 ## Privacy and security
 
